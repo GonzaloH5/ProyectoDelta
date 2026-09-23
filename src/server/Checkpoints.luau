@@ -1,0 +1,110 @@
+--!strict
+-- Checkpoints del recorrido: las islas de descanso del mapa (Map.RestIslandNN.CheckpointZone) y la meta
+-- (Map.FinishIsland: línea del arco de meta). Un ala alcanza un checkpoint cuando CRUZA el plano de su zona hacia
+-- adelante (test de segmento: no se lo salta aunque el servidor vaya a tirones).
+-- El índice de un checkpoint = número de niveles superados al llegar (RestIsland03 → 3, meta → total).
+
+export type Checkpoint = {
+	index: number,
+	plane: CFrame, -- plano que hay que cruzar: -Z local = hacia adelante del recorrido
+	half: Vector3, -- medio tamaño del plano (X ancho, Y alto)
+	spawn: CFrame, -- dónde reaparece el ala: centro de la zona, mirando hacia adelante (horizontal)
+	final: boolean, -- meta: el recorrido termina aquí
+	info: { [string]: any }, -- lo que ve el cliente en la pantalla de checkpoint
+}
+
+local Checkpoints = {}
+
+local list: { Checkpoint } = {}
+local levelCount = 0
+
+local function levelTitle(map: Instance, index: number): string
+	local level = map:FindFirstChild(string.format("Level%02d", index))
+	local title = level and level:GetAttribute("Title")
+	return if type(title) == "string" then title else ""
+end
+
+local function biomeOf(model: Instance?): (string?, Color3?)
+	if not model then
+		return nil, nil
+	end
+	local title, color = model:GetAttribute("BiomeTitle"), model:GetAttribute("BiomeColor")
+	return if type(title) == "string" then title else nil, if typeof(color) == "Color3" then color else nil
+end
+
+local function flatSpawn(zone: BasePart): CFrame
+	local look = zone.CFrame.LookVector * Vector3.new(1, 0, 1)
+	local forward = if look.Magnitude > 1e-3 then look.Unit else Vector3.xAxis
+	return CFrame.lookAt(zone.Position, zone.Position + forward)
+end
+
+-- Lee el mapa (una vez, al arrancar el servidor). Sin mapa no hay checkpoints: se reaparece en la salida.
+function Checkpoints.load(map: Instance?)
+	table.clear(list)
+	levelCount = 0
+	if not map then
+		return
+	end
+	while map:FindFirstChild(string.format("Level%02d", levelCount + 1)) do
+		levelCount += 1
+	end
+
+	local previousBiome = biomeOf(map:FindFirstChild("StartIsland"))
+	for index = 1, levelCount do
+		local final = index == levelCount
+		local model = map:FindFirstChild(if final then "FinishIsland" else string.format("RestIsland%02d", index))
+		if not model then
+			continue
+		end
+		local zone = model:FindFirstChild("CheckpointZone")
+		if not (zone and zone:IsA("BasePart")) then
+			continue
+		end
+		-- Meta: el plano es la línea del arco de meta, pero con el ancho de todo el valle (pasar por fuera
+		-- del arco también cuenta; si no, el dúo reaparecería en bucle antes de la meta).
+		local line = if final then model:FindFirstChild("FinishLine") else nil
+		local plane = if line and line:IsA("BasePart") then line.CFrame else zone.CFrame
+		local biome, color = biomeOf(model)
+		table.insert(list, {
+			index = index,
+			plane = plane,
+			half = zone.Size / 2,
+			spawn = flatSpawn(zone),
+			final = final,
+			info = {
+				index = index,
+				total = levelCount,
+				title = levelTitle(map, index),
+				nextTitle = if final then nil else levelTitle(map, index + 1),
+				final = final,
+				color = color,
+				newBiome = if biome and biome ~= previousBiome then biome else nil, -- anuncia el cambio de bioma
+			},
+		})
+		previousBiome = biome or previousBiome
+	end
+end
+
+function Checkpoints.count(): number
+	return levelCount
+end
+
+-- Primer checkpoint con índice > afterIndex cuyo plano se cruzó hacia adelante entre from y to.
+function Checkpoints.crossed(from: Vector3, to: Vector3, afterIndex: number): Checkpoint?
+	for _, checkpoint in list do
+		if checkpoint.index <= afterIndex then
+			continue
+		end
+		local a = checkpoint.plane:PointToObjectSpace(from)
+		local b = checkpoint.plane:PointToObjectSpace(to)
+		if a.Z > 0 and b.Z <= 0 then
+			local hit = a:Lerp(b, a.Z / (a.Z - b.Z))
+			if math.abs(hit.X) <= checkpoint.half.X and math.abs(hit.Y) <= checkpoint.half.Y then
+				return checkpoint
+			end
+		end
+	end
+	return nil
+end
+
+return Checkpoints

@@ -1,0 +1,26 @@
+{
+  "name": "ProyectoDelta",
+  "tree": {
+    "$className": "DataModel",
+
+    "ReplicatedStorage": {
+      "Glider": {
+        "$path": "src/shared"
+      }
+    },
+
+    "ServerScriptService": {
+      "Glider": {
+        "$path": "src/server"
+      }
+    },
+
+    "StarterPlayer": {
+      "StarterPlayerScripts": {
+        "GliderClient": {
+          "$path": "src/client"
+        }
+      }
+    }
+  }
+}
