@@ -36,7 +36,7 @@ local GliderConfig = {
 	CountdownTime = 2, -- segundos colgados en la salida antes de despegar
 	CrashPauseTime = 1.5, -- segundos congelados tras chocar antes de volver al lobby
 	ResetCooldown = 1, -- segundos mínimos entre dos pulsaciones del botón Reset (de cualquier jugador)
-	ShowDebug = true, -- muestra valores de Lift/Balance/velocidad en pantalla
+	ShowDebug = false, -- true = muestra valores de Lift/Balance/velocidad en pantalla
 
 	-- ── Avance (nunca desaparece durante el vuelo) ─────────────────────
 	ForwardSpeed = 60, -- studs/s

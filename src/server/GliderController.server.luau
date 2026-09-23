@@ -100,6 +100,22 @@ local function devLaunchPoint(): (CFrame?, number)
 	return nil, 0
 end
 
+-- Nivel en curso (el siguiente al último checkpoint) para el HUD: número, total, título y color del bioma.
+local function levelOf(session: Session): number
+	return math.clamp(session.checkpoint + 1, 1, math.max(Checkpoints.count(), 1))
+end
+
+local function publishLevel(session: Session)
+	local level = levelOf(session)
+	local title, color = Checkpoints.levelInfo(level)
+	local glider = session.glider
+	glider:SetAttribute("Level", level)
+	glider:SetAttribute("LevelCount", Checkpoints.count())
+	glider:SetAttribute("LevelTitle", title)
+	glider:SetAttribute("LevelColor", color)
+	glider:SetAttribute("LevelProgress", if session.completed then 1 else 0)
+end
+
 local function startSession(players: { Player })
 	local duo = {}
 	for _, player in players do
@@ -116,6 +132,7 @@ local function startSession(players: { Player })
 	local launchAt, startCheckpoint = devLaunchPoint()
 	local session = GliderSession.new(nextId, template, gliderFolder, duo, onSessionFinished, launchAt, startCheckpoint)
 	sessions[session] = true
+	publishLevel(session)
 	for _, player in duo do
 		sessionOf[player] = session
 	end
@@ -124,6 +141,7 @@ end
 -- El ala cruzó un checkpoint: desde aquí reaparece, y ambos ven la pantalla de checkpoint.
 local function reachCheckpoint(session: Session, checkpoint: Checkpoints.Checkpoint)
 	session:setCheckpoint(checkpoint.index, checkpoint.spawn, checkpoint.final)
+	publishLevel(session)
 	for _, player in session:riders() do
 		remote:FireClient(player, "Checkpoint", checkpoint.info)
 	end
@@ -169,10 +187,19 @@ end)
 
 local probeParams = CollisionGroups.probeParams()
 local lobbyTimer = 0
+local progressTimer = 0
 
 RunService.Heartbeat:Connect(function(rawDt)
 	local dt = math.min(rawDt, Config.MaxDeltaTime)
+	progressTimer += rawDt
+	local publishProgress = progressTimer >= Config.StateBroadcastInterval
+	if publishProgress then
+		progressTimer = 0
+	end
 	for session in sessions do
+		if publishProgress and not session.completed then
+			session.glider:SetAttribute("LevelProgress", Checkpoints.progress(levelOf(session), session.root.Position))
+		end
 		-- Checkpoints: tramo recorrido desde el paso anterior (solo en vuelo; tras reaparecer se empieza de cero).
 		if session.flight.state == "Flying" then
 			local position = session.root.Position

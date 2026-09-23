@@ -44,6 +44,8 @@ export type Session = typeof(setmetatable(
 		respawnCFrame: CFrame, -- dónde reaparece el ala tras chocar o con Reset
 		checkpoint: number, -- niveles superados (0 = aún en el primero)
 		completed: boolean, -- cruzó la meta: al terminar el vuelo, el dúo vuelve al lobby
+		runTime: number, -- cronómetro del recorrido: desde el primer despegue hasta la meta (choques incluidos)
+		timing: boolean,
 		gliderSize: Vector3,
 		wingTop: number,
 		linearVelocity: LinearVelocity,
@@ -249,6 +251,8 @@ function GliderSession.new(
 		respawnCFrame = root.CFrame,
 		checkpoint = startCheckpoint or 0,
 		completed = false,
+		runTime = 0,
+		timing = false,
 		gliderSize = size,
 		wingTop = wingTop,
 		linearVelocity = linearVelocity,
@@ -437,8 +441,12 @@ function GliderSession.setCheckpoint(self: Session, index: number, spawn: CFrame
 	self.respawnCFrame = spawn
 	self.respawnForward = (spawn.LookVector * Vector3.new(1, 0, 1)).Unit
 	self.completed = final
+	if final then
+		self.timing = false -- la meta para el cronómetro
+	end
 	self.glider:SetAttribute("Checkpoint", index)
 	self.glider:SetAttribute("Completed", final)
+	self.glider:SetAttribute("RunTime", self.runTime)
 end
 
 -- Vuelve al último checkpoint (o a la salida) con el mismo dúo y repite la cuenta atrás.
@@ -470,6 +478,9 @@ function GliderSession._launch(self: Session)
 	self.root:SetNetworkOwner(nil) -- servidor dueño: ningún cliente simula el ala
 	self.linearVelocity.VectorVelocity = self.respawnForward * Config.ForwardSpeed
 	self.linearVelocity.Enabled = true
+	if not self.completed then
+		self.timing = true -- el primer despegue arranca el cronómetro (los siguientes no lo reinician)
+	end
 	self.alignOrientation.Enabled = true
 	self:_setTrails(true)
 	self:_setState("Flying")
@@ -655,6 +666,7 @@ function GliderSession._broadcast(self: Session, dt: number)
 	glider:SetAttribute("TurnRate", flight.turnRate)
 	glider:SetAttribute("Countdown", math.max(0, Config.CountdownTime - flight.timer))
 	glider:SetAttribute("Altitude", self.root.Position.Y)
+	glider:SetAttribute("RunTime", self.runTime)
 	if flight.state == "Flying" then
 		self:_updateTrails()
 	end
@@ -667,6 +679,9 @@ function GliderSession.step(self: Session, dt: number, params: RaycastParams)
 	local flight = self.flight
 	flight.time += dt
 	flight.timer += dt
+	if self.timing then
+		self.runTime += dt
+	end
 
 	self:_updateSlides(dt)
 	self:_computeInputs()

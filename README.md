@@ -114,7 +114,22 @@ require(game.ServerScriptService.Glider.DevTools.MapDresser:Clone()).audit(works
 |---|---|---|
 | `src/shared` | `ReplicatedStorage.Glider` | `GliderConfig` (todos los parámetros), `GliderMath`, `GliderRemote` |
 | `src/server` | `ServerScriptService.Glider` | `GliderController` (sesiones, lobby, checkpoints), `GliderSession` (un ala + su dúo + vuelo + reaparición), `Checkpoints` (islas de descanso y meta), `Lobby` (plataformas), `RiderRig` (colgar jugadores + IK), `CollisionGroups`, `DevTools` (MapBuilder, MapDresser, Biomes, LobbyBuilder, LowPoly, FlightTester: solo edición) |
-| `src/client` | `StarterPlayerScripts.GliderClient` | input A/D, `GliderCamera`, `StatusLabel`, `ResetButton`, `LobbyButton`, `CheckpointBanner`, `OtherDuos` |
+| `src/client` | `StarterPlayerScripts.GliderClient` | `InputAxis` (teclado/mando/táctil), `FlightHud`, `GliderCamera`, `ResetButton`, `LobbyButton`, `CheckpointBanner`, `UiScale`, `OtherDuos` |
+
+## Controles e interfaz
+
+| Acción | Teclado | Mando | Móvil |
+|---|---|---|---|
+| Moverse por la barra | A / D o flechas | gatillos L2 / R2 (también cruceta y stick) | botones grandes `<` `>` abajo a los lados |
+| Volver al último checkpoint (pruebas) | R | Y | botón RESET (arriba a la derecha) |
+| Volver al lobby (con confirmación) | botón LOBBY | X dos veces | botón LOBBY |
+
+- **HUD** (`FlightHud`): nivel `LEVEL NN / total` con título, franja del color del bioma y barra de progreso
+  (atributo `LevelProgress`: el servidor proyecta el ala sobre la `Route` del nivel), cronómetro del recorrido
+  (`RunTime`: desde el primer despegue hasta la meta, choques incluidos), barra del ala con tu marca y la del compañero
+  e indicadores CLIMB / DIVE / GLIDE y de giro, cuenta atrás "2 · 1 · GO!" y avisos de choque / meta.
+  Los valores internos solo con `ShowDebug = true` en `GliderConfig`.
+- **Interfaz adaptable** (`UiScale`): cada pantalla se escala respecto a 1280×720 (entre 0.6 y 1.2).
 
 ## Probar
 

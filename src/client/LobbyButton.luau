@@ -1,12 +1,14 @@
 --!strict
 -- Botón LOBBY (centro derecha) mientras vas en el ala: devuelve a TODO el dúo al lobby y cancela el vuelo.
 -- Pide confirmación (segundo clic antes de CONFIRM_TIME s): un clic sin querer cortaría también el vuelo
--- del compañero. El servidor decide; el cliente solo lo pide.
+-- del compañero. Con mando: botón X (dos veces). El servidor decide; el cliente solo lo pide.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
 
 local remote = ReplicatedStorage:WaitForChild("Glider"):WaitForChild("GliderRemote") :: RemoteEvent
+local UiScale = require(script.Parent:WaitForChild("UiScale"))
 
 local LobbyButton = {}
 
@@ -19,6 +21,7 @@ local gui = Instance.new("ScreenGui")
 gui.Name = "GliderLobby"
 gui.ResetOnSpawn = false
 gui.Enabled = false
+UiScale.attach(gui)
 
 local button = Instance.new("TextButton")
 button.Name = "Lobby"
@@ -68,7 +71,10 @@ local function setConfirming(value: boolean)
 	button.BackgroundColor3 = if value then CONFIRM_COLOR else IDLE_COLOR
 end
 
-button.Activated:Connect(function()
+local function press()
+	if not gui.Enabled then
+		return
+	end
 	if confirming then
 		setConfirming(false)
 		remote:FireServer("Lobby")
@@ -82,13 +88,21 @@ button.Activated:Connect(function()
 			setConfirming(false)
 		end
 	end)
+end
+
+button.Activated:Connect(press)
+UserInputService.InputBegan:Connect(function(input, processed)
+	if not processed and input.KeyCode == Enum.KeyCode.ButtonX then
+		press()
+	end
 end)
 
 -- Solo visible mientras el jugador va en el ala.
 function LobbyButton.setVisible(visible: boolean)
 	gui.Enabled = visible
-	if not visible then
-		setConfirming(false)
+	setConfirming(false)
+	if visible and UserInputService.GamepadEnabled and not UserInputService.KeyboardEnabled then
+		button.Text = IDLE_TEXT .. " (X)"
 	end
 end
 

@@ -8,6 +8,8 @@
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 
+local UiScale = require(script.Parent:WaitForChild("UiScale"))
+
 local CheckpointBanner = {}
 
 local HOLD_TIME, FINAL_HOLD_TIME = 1.7, 3.5
@@ -57,6 +59,7 @@ gui.ResetOnSpawn = false
 gui.IgnoreGuiInset = true
 gui.DisplayOrder = 20
 gui.Enabled = false
+UiScale.attach(gui)
 
 local root = Instance.new("Frame")
 root.AnchorPoint = Vector2.new(0.5, 0.5)

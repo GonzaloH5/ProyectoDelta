@@ -17,6 +17,9 @@ local Checkpoints = {}
 
 local list: { Checkpoint } = {}
 local levelCount = 0
+-- Por nivel: línea ideal (Entry → Route → Exit) con distancias acumuladas, título y color del bioma (HUD).
+type LevelInfo = { points: { Vector3 }, lengths: { number }, total: number, title: string, color: Color3? }
+local levels: { [number]: LevelInfo } = {}
 
 local function levelTitle(map: Instance, index: number): string
 	local level = map:FindFirstChild(string.format("Level%02d", index))
@@ -41,12 +44,42 @@ end
 -- Lee el mapa (una vez, al arrancar el servidor). Sin mapa no hay checkpoints: se reaparece en la salida.
 function Checkpoints.load(map: Instance?)
 	table.clear(list)
+	table.clear(levels)
 	levelCount = 0
 	if not map then
 		return
 	end
 	while map:FindFirstChild(string.format("Level%02d", levelCount + 1)) do
 		levelCount += 1
+	end
+	for index = 1, levelCount do
+		local level = map:FindFirstChild(string.format("Level%02d", index)) :: Instance
+		local entry, exit, route = level:FindFirstChild("Entry"), level:FindFirstChild("Exit"), level:FindFirstChild("Route")
+		local points = {}
+		if entry and entry:IsA("BasePart") then
+			table.insert(points, entry.Position)
+		end
+		if route then
+			local markers = route:GetChildren()
+			table.sort(markers, function(a, b)
+				return a.Name < b.Name
+			end)
+			for _, marker in markers do
+				if marker:IsA("BasePart") then
+					table.insert(points, marker.Position)
+				end
+			end
+		end
+		if exit and exit:IsA("BasePart") then
+			table.insert(points, exit.Position)
+		end
+		local lengths, total = { 0 }, 0
+		for i = 2, #points do
+			total += (points[i] - points[i - 1]).Magnitude
+			lengths[i] = total
+		end
+		local _, color = biomeOf(level)
+		levels[index] = { points = points, lengths = lengths, total = total, title = levelTitle(map, index), color = color }
 	end
 
 	local previousBiome = biomeOf(map:FindFirstChild("StartIsland"))
@@ -87,6 +120,36 @@ end
 
 function Checkpoints.count(): number
 	return levelCount
+end
+
+-- Título y color del bioma de un nivel (para el HUD).
+function Checkpoints.levelInfo(index: number): (string, Color3?)
+	local info = levels[index]
+	if not info then
+		return "", nil
+	end
+	return info.title, info.color
+end
+
+-- Fracción recorrida del nivel (0-1): proyección de la posición sobre su línea ideal, sin retroceder a
+-- tramos lejanos (se toma el punto más cercano de toda la polilínea).
+function Checkpoints.progress(index: number, position: Vector3): number
+	local info = levels[index]
+	if not info or #info.points < 2 or info.total <= 0 then
+		return 0
+	end
+	local best, bestDistance = 0, math.huge
+	for i = 2, #info.points do
+		local a, b = info.points[i - 1], info.points[i]
+		local ab = b - a
+		local t = math.clamp((position - a):Dot(ab) / math.max(ab:Dot(ab), 1e-6), 0, 1)
+		local distance = (a + ab * t - position).Magnitude
+		if distance < bestDistance then
+			bestDistance = distance
+			best = info.lengths[i - 1] + ab.Magnitude * t
+		end
+	end
+	return math.clamp(best / info.total, 0, 1)
 end
 
 -- Primer checkpoint con índice > afterIndex cuyo plano se cruzó hacia adelante entre from y to.

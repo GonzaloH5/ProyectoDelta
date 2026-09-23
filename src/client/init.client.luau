@@ -1,19 +1,19 @@
 --!strict
--- Cliente del ala delta: encuentra el ala de su dúo, lee A/D, envía el eje al servidor
--- y controla la cámara. Nunca mueve el ala ni el cuerpo: eso lo decide el servidor.
+-- Cliente del ala delta: encuentra el ala de su dúo, lee el eje (teclado, mando o táctil: InputAxis),
+-- lo envía al servidor, controla la cámara y el HUD. Nunca mueve el ala ni el cuerpo: eso lo decide el servidor.
 -- Hay un ala por dúo en Workspace[Config.GliderFolderName]; las de otros dúos se ven
 -- semitransparentes (OtherDuos).
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
 
 local Shared = ReplicatedStorage:WaitForChild("Glider")
 local Config = require(Shared:WaitForChild("GliderConfig"))
 local remote = Shared:WaitForChild("GliderRemote") :: RemoteEvent
 local GliderCamera = require(script:WaitForChild("GliderCamera"))
-local StatusLabel = require(script:WaitForChild("StatusLabel"))
+local InputAxis = require(script:WaitForChild("InputAxis"))
+local FlightHud = require(script:WaitForChild("FlightHud"))
 local ResetButton = require(script:WaitForChild("ResetButton"))
 local LobbyButton = require(script:WaitForChild("LobbyButton"))
 local CheckpointBanner = require(script:WaitForChild("CheckpointBanner"))
@@ -94,6 +94,7 @@ local function mount(glider: Model, root: BasePart, side: number)
 	end
 	setCharacterAnimated(false)
 	GliderCamera.start(root)
+	InputAxis.setEnabled(true)
 	ResetButton.setVisible(true)
 	LobbyButton.setVisible(true)
 end
@@ -107,17 +108,9 @@ local function unmount()
 	end
 	setCharacterAnimated(true)
 	GliderCamera.stop()
+	InputAxis.setEnabled(false)
 	ResetButton.setVisible(false)
 	LobbyButton.setVisible(false)
-end
-
-local function readAxis(): number
-	if UserInputService:GetFocusedTextBox() then
-		return 0 -- escribiendo en el chat
-	end
-	local left = UserInputService:IsKeyDown(Enum.KeyCode.A) or UserInputService:IsKeyDown(Enum.KeyCode.Left)
-	local right = UserInputService:IsKeyDown(Enum.KeyCode.D) or UserInputService:IsKeyDown(Enum.KeyCode.Right)
-	return (if right then 1 else 0) - (if left then 1 else 0)
 end
 
 RunService:BindToRenderStep("GliderClient", Enum.RenderPriority.Camera.Value + 1, function(dt)
@@ -137,7 +130,7 @@ RunService:BindToRenderStep("GliderClient", Enum.RenderPriority.Camera.Value + 1
 	end
 
 	if mountedGlider and root then
-		local axis = readAxis()
+		local axis = InputAxis.read()
 		if axis ~= sentAxis then
 			sentAxis = axis
 			remote:FireServer("Axis", axis)
@@ -145,7 +138,7 @@ RunService:BindToRenderStep("GliderClient", Enum.RenderPriority.Camera.Value + 1
 		GliderCamera.update(root :: BasePart, dt)
 	end
 
-	StatusLabel.update(mountedGlider, mountedSide)
+	FlightHud.update(mountedGlider, mountedSide, dt)
 	OtherDuos.update(gliderFolder, mountedGlider, dt)
 end)
 
