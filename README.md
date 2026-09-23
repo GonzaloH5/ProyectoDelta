@@ -116,6 +116,14 @@ require(game.ServerScriptService.Glider.DevTools.MapDresser:Clone()).audit(works
 | `src/server` | `ServerScriptService.Glider` | `GliderController` (sesiones, lobby, checkpoints), `GliderSession` (un ala + su dúo + vuelo + reaparición), `Checkpoints` (islas de descanso y meta), `Lobby` (plataformas), `RiderRig` (colgar jugadores + IK), `CollisionGroups`, `DevTools` (MapBuilder, MapDresser, Biomes, LobbyBuilder, LowPoly, FlightTester: solo edición) |
 | `src/client` | `StarterPlayerScripts.GliderClient` | `InputAxis` (teclado/mando/táctil), `FlightHud`, `GliderCamera`, `ResetButton`, `LobbyButton`, `CheckpointBanner`, `UiScale`, `OtherDuos` |
 
+## Rendimiento: ventana de niveles cargados
+
+Con StreamingEnabled, los niveles e islas del mapa son `PersistentPerPlayer` y `LevelStreaming` (servidor) fija a
+cada jugador en vuelo solo su ventana: la isla de su último checkpoint c y los niveles c+1 … c+4 con sus islas
+(en el nivel 3 se carga hasta el 6). Lo superado y lo lejano no se fija y el streaming lo descarga o no lo envía.
+Al volver al lobby se suelta todo. La colisión es del servidor, que siempre tiene el mapa entero.
+Recomendado en Workspace: `StreamingTargetRadius` ≈ 1024, `StreamingMinRadius` ≈ 256, `StreamOutBehavior = Opportunistic`.
+
 ## Controles e interfaz
 
 | Acción | Teclado | Mando | Móvil |

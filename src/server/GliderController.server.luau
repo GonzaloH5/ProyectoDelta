@@ -20,11 +20,13 @@ local Config = require(Shared.GliderConfig)
 local Checkpoints = require(script.Parent.Checkpoints)
 local CollisionGroups = require(script.Parent.CollisionGroups)
 local GliderSession = require(script.Parent.GliderSession)
+local LevelStreaming = require(script.Parent.LevelStreaming)
 local Lobby = require(script.Parent.Lobby)
 local remote = Shared:WaitForChild("GliderRemote") :: RemoteEvent
 
 CollisionGroups.setup()
 Checkpoints.load(workspace:FindFirstChild("Map"))
+LevelStreaming.load(workspace:FindFirstChild("Map"))
 
 -- La AlaDelta del mapa es la plantilla: marca dónde y cómo sale cada ala. Nadie vuela la original.
 local template = workspace:WaitForChild(Config.GliderName) :: Model
@@ -67,6 +69,7 @@ local function onSessionFinished(session: Session, reason: GliderSession.FinishR
 	for _, player in session.members do
 		if sessionOf[player] == session then
 			sessionOf[player] = nil
+			LevelStreaming.clear(player)
 		end
 	end
 	if reason == "empty" then
@@ -135,6 +138,7 @@ local function startSession(players: { Player })
 	publishLevel(session)
 	for _, player in duo do
 		sessionOf[player] = session
+		LevelStreaming.setWindow(player, session.checkpoint)
 	end
 end
 
@@ -143,6 +147,7 @@ local function reachCheckpoint(session: Session, checkpoint: Checkpoints.Checkpo
 	session:setCheckpoint(checkpoint.index, checkpoint.spawn, checkpoint.final)
 	publishLevel(session)
 	for _, player in session:riders() do
+		LevelStreaming.setWindow(player, checkpoint.index)
 		remote:FireClient(player, "Checkpoint", checkpoint.info)
 	end
 end
@@ -229,4 +234,5 @@ Players.PlayerRemoving:Connect(function(player)
 	end
 	sessionOf[player] = nil
 	messageWindow[player] = nil
+	LevelStreaming.clear(player)
 end)
