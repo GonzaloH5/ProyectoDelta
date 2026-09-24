@@ -12,7 +12,7 @@ El mapa (Workspace, incluidos `AlaDelta` y `Lobby`) vive en el archivo del place
 ## Ciclo de juego
 
 Lobby → dos jugadores sobre una plataforma `DuoPad` → cuenta atrás → se clona un ala para ese dúo en la salida
-→ vuelan → cada **isla de descanso es un checkpoint** → los golpes quitan **corazones** (3); sin corazones el ala se
+→ vuelan → cada **isla de descanso es un checkpoint** → los golpes quitan **corazones** (2); sin corazones el ala se
 pierde y el mismo dúo reaparece en su último **punto seguro** → botón **LOBBY** (cualquiera de los dos, con
 confirmación) o aterrizar tras la meta → el dúo vuelve al lobby (pantalla de resultados).
 Si uno de los dos se va del juego o muere, la partida se cancela y el otro vuelve al lobby (igual que el botón).
@@ -76,8 +76,11 @@ ecuaciones que el juego (`GliderPhysics`) en dos modos:
 | Niveles | Tiene que pasar |
 |---|---|
 | 1-10 (capítulos 1-2: aprender) | novato en el juego sin golpes · tranquilo estricto ≥ 8 |
-| 11-25 (capítulos 3-5: practicar) | novato en el juego con ≤ 2 golpes · tranquilo estricto ≥ 4 |
+| 11-25 (capítulos 3-5: practicar) | novato en el juego con ≤ 1 golpe · tranquilo estricto ≥ 4 |
 | 26-50 (capítulos 6-10: dominar) | completo estricto ≥ 4 · tranquilo en el juego sin golpes |
+
+Los pilotos vuelan con las corrientes del nivel, y en los niveles con obstáculos móviles cada piloto vuela con
+**4 desfases** del reloj: tiene que pasar con todos (ningún móvil mata sin remedio).
 
 Además (de diseño, no lo mide el piloto): ≥ 2 s de vuelo (120 studs) entre dos obstáculos, como mucho una idea nueva
 por nivel, y el último nivel de cada capítulo combina las ideas del capítulo.
@@ -97,22 +100,24 @@ por nivel, y el último nivel de cada capítulo combina las ideas del capítulo.
 - **Trazado en filas**: para que 50 niveles no se alejen del origen ni se crucen, los niveles 1-10 van hacia +X y cada
   pareja 11-12, 21-22, 31-32 y 41-42 gira 90° + 90°: cinco filas alternas (+X / -X) separadas ~4.000 studs
   (como mínimo ~2.000 entre paredes de filas vecinas). El resto de niveles acaba con el mismo rumbo con el que empieza.
-  Total: ~177.000 studs (~49 min a 60 studs/s sin choques), ~80.000 piezas; el punto más lejano está a ~40.000 del origen.
+  Total: ~174.000 studs (~48 min a 60 studs/s sin choques ni impulso), ~77.000 piezas; el punto más lejano está a ~38.000 del origen.
 
 ### Los 50 niveles
 
 | Capítulo · bioma | Niveles | Idea de cada nivel (el último combina el capítulo) |
 |---|---|---|
-| 1 · Pradera | 1-5 | subir y bajar · izquierda y derecha · altura + giro · curvas seguidas · subida larga |
-| 2 · Cañón rojo | 6-10 | bajada larga · paso estrecho · slalom suave · correcciones rápidas · Final Test |
-| 3 · Bosque otoñal | 11-15 | giro largo de 90° · colinas seguidas (+90°) · túnel bajo · slalom rápido · Autumn Trial |
-| 4 · Mesetas del desierto | 16-20 | escalones de subida · bajada con vigas · zigzag subiendo y bajando · saliente antes de un paso estrecho · Mesa Run |
-| 5 · Glaciar | 21-25 | giro de 90° estrecho · grieta estrecha y alta (+90°) · carámbanos (vigas seguidas) · salientes dentro de las curvas · Glacier Trial |
+| 1 · Pradera | 1-5 | subir y bajar · curvas con **anillos** · altura + giro con **plumas** · **corriente ascendente** y loma alta · Meadow Trial |
+| 2 · Cañón rojo | 6-10 | bajada larga con anillos · **troncos que se balancean** · slalom suave · **viento lateral** · Canyon Trial |
+| 3 · Bosque otoñal | 11-15 | giro largo de 90° · colinas seguidas (+90°) · **compuertas** · slalom rápido · Autumn Trial |
+| 4 · Mesetas del desierto | 16-20 | escalones con corriente · bajada con vigas y **corrientes descendentes** · zigzag · saliente antes de un paso estrecho · Mesa Run |
+| 5 · Glaciar | 21-25 | giro de 90° con viento · grieta con corriente (+90°) · carámbanos y **aspas** · salientes dentro de las curvas · Glacier Trial |
 | 6 · Acantilados | 26-30 | picado y colina al salir · **pilares** (farallones) · colina + viga seguidas · horquillas de radio 180 · Cliff Trial |
 | 7 · Selva | 31-35 | giro de 90° con pilares · vigas en curva (+90°) · colina y saliente, viga y pilar · laberinto de pilares · Jungle Trial |
 | 8 · Volcán | 36-40 | tubo bajo y estrecho · subida larga con salientes · slalom de magma · espiral bajando · Volcano Trial |
 | 9 · Cristal | 41-45 | giro de 90° con pilares · sala de prismas (+90°) · olas con pilares · saliente-pilar cada 250 · Crystal Trial |
 | 10 · Cielo final | 46-50 | ascenso con vigas · surf (colina y viga cada ~260) · slalom en curvas · Heaven's Gauntlet · Final Flight |
+
+Capítulos 6-10: además, 2-4 elementos nuevos por nivel (`CHAPTER_EXTRAS`: troncos, compuertas, aspas, corrientes, anillos y plumas).
 
 ### Vestido visual (biomas)
 
@@ -151,7 +156,7 @@ require(game.ServerScriptService.Glider.DevTools.MapDresser:Clone()).audit(works
   al Cañón rojo). Plantas y fondos de valle quedan fuera del volumen de vuelo (encima de los muros, bajo las islas).
 - `DRESS_LEVELS` (en `MapBuilder.luau`) limita hasta qué nivel se viste (ahora: 50, todo el recorrido).
 - Helpers low-poly compartidos con el lobby: `LowPoly.luau` (árbol, cactus, pino, palmera, cristales, árbol calcinado…).
-- Regenerar los 50 niveles en Studio tarda un rato (~80.000 piezas): lanzar `build()` y guardar el place al terminar.
+- Regenerar los 50 niveles en Studio tarda un rato (~77.000 piezas): lanzar `build()` y guardar el place al terminar.
 
 ## Estructura
 
@@ -235,8 +240,9 @@ dos desde la salida; las pruebas con `DevStartLevel` y los vuelos en solitario n
 | Acción | Teclado | Mando | Móvil |
 |---|---|---|---|
 | Moverse por la barra | A / D o flechas | gatillos L2 / R2 (también cruceta y stick) | botones grandes `<` `>` abajo a los lados |
+| Balancearse (impulso) | Espacio | A | botón ⇑ (sobre el botón derecho) |
 | Reaparecer en el último punto seguro | R | Y | botón RESPAWN (arriba a la derecha) |
-| Avisos al compañero (Climb · Dive · Left · Right · Nice) | 1 · 2 · 3 · 4 · 5 | A · B · L1 · R1 | botón 💬 |
+| Avisos al compañero (Climb · Dive · Left · Right · Nice) | 1 · 2 · 3 · 4 · 5 | cruceta ↑ · ↓ · L1 · R1 · B | botón 💬 |
 | Volver al lobby (con confirmación) | botón LOBBY | X dos veces | botón LOBBY |
 | Ajustes | botón ⚙ (izquierda) | — | botón ⚙ |
 
@@ -250,6 +256,27 @@ dos desde la salida; las pruebas con `DevStartLevel` y los vuelos en solitario n
   (sin alabeo de cámara, cambios de FOV, temblores ni líneas de velocidad) y tamaño del HUD. Se guardan en `PlayerStats`.
 - **Interfaz adaptable** (`UiScale`): cada pantalla se escala respecto a 1280×720 (entre 0.6 y 1.2) × tamaño del HUD.
 
+## Balanceo, corrientes, anillos, plumas y obstáculos móviles
+
+- **Balanceo (impulso)**: mientras se mantiene Espacio (A / botón ⇑) el jugador se columpia en la barra y el ala
+  acelera: **+35 %** si se balancea uno, **+70 %** si se balancean los dos. Gasta la **energía** del dúo (barra bajo
+  los corazones; los dos a la vez ≈ 2,5 s), que se recarga planeando, con los **anillos azules** y en cada checkpoint.
+  Más rápido = curvas más abiertas y golpes más fuertes: es un riesgo que se elige (y mejora el tiempo).
+- **Corrientes** (`ctx.updraft / downdraft / crosswind` en `MapBuilder`, zonas en `LevelNN.Wind`): la ascendente
+  (turquesa) sube y permite pasar lomas más altas de lo que el ala sube sola; la descendente (violeta) hunde; el viento
+  lateral (blanco) empuja hacia una pared. Las partículas muestran hacia dónde soplan.
+- **Anillos de impulso** (`ctx.boostRing`): cruzarlos da energía y un empujón corto; van en líneas algo arriesgadas.
+- **Plumas** (`ctx.feathers`): gemas doradas en líneas ajustadas; se recogen pasando cerca. Contador en el HUD, en el
+  checkpoint (★ con todas) y en los resultados; se guarda el mejor número por nivel (`PlayerStats.Feathers`).
+- **Obstáculos móviles** (`Movers.luau`): **troncos** que se balancean (por debajo siempre se pasa), **compuertas** que
+  abren y cierran (nunca del todo) y **aspas** giratorias (las esquinas quedan libres). Su posición es una función del
+  reloj compartido: el servidor mueve colisionadores invisibles (`MoverService`) y cada cliente dibuja la copia
+  visual con la misma fórmula (`MoverVisuals`), así se ven suaves y coinciden con lo que choca.
+- **Niveles**: capítulos 1-2 rehechos (≈ 200 × 150, más cortos y densos) y 3-5 al 75 % de sección, cada capítulo
+  con un elemento nuevo: anillos (2), plumas (3), corriente ascendente (4), troncos (7), viento lateral (9),
+  compuertas (13), corrientes que bajan (17), aspas (23). En los capítulos 6-10, `ctx.autoExtras` reparte 2-4
+  elementos por nivel según `CHAPTER_EXTRAS`. El tutorial tiene un 4.º tramo, **BOOST**.
+
 ## Sensación de vuelo (lo que perdona el juego)
 
 Todo el vuelo está en `GliderPhysics` (compartido): el servidor, el `FlightTester` y `tools/sim` usan las mismas
@@ -257,8 +284,8 @@ ecuaciones. Los números, en `GliderConfig`.
 
 - **Mandos legibles**: respuesta lineal con zona muerta (estar "más o menos" nivelados = vuelo recto y a la misma
   altura), alabeo sin tambaleo, viento suave, deslizamiento por la barra más rápido.
-- **Tocar no es morir**: el ala resbala a lo largo de paredes y obstáculos. Un golpe fuerte (≈17° o más contra la
-  superficie) o un roce largo (1,2 s) quitan **1 de 3 corazones** y dan 1,5 s de invulnerabilidad. Suelos y tops de
+- **Tocar no es morir**: el ala resbala a lo largo de paredes y obstáculos. Un golpe fuerte (≈23° o más contra la
+  superficie) o un roce largo (1,5 s) quitan **1 de 2 corazones** y dan 1,5 s de invulnerabilidad. Suelos y tops de
   obstáculos nunca quitan corazones (el ala se levanta sola sobre el suelo). El núcleo que choca es un 75 % del ala.
 - **Sin corazones**: voltereta corta (0,6 s), fundido y reaparición en el último **punto seguro** (checkpoint o un
   tramo de vuelo limpio de los últimos ~8 s, despejado y mirando a la línea ideal) con cuenta atrás de 1 s.
@@ -310,7 +337,8 @@ python3 tools/sim/run.py drivers/check.luau              # genera el mapa y pasa
 python3 tools/sim/run.py drivers/check.luau fine=true    # márgenes finos (1, 2, 3… studs) para ver la holgura
 python3 tools/sim/run.py drivers/pilots.luau from=11     # los 3 pilotos en cada nivel (perfil de dificultad)
 python3 tools/sim/run.py drivers/sloppy.luau             # dúo descuidado en el juego: golpes y alas perdidas por nivel
-python3 tools/sim/run.py drivers/trace.luau level=10 pilot=novice from=60 to=75   # traza un vuelo del FlightTester
+python3 tools/sim/run.py drivers/sloppy.luau pump=true   # lo mismo balanceándose en las rectas (impulso)
+python3 tools/sim/run.py drivers/trace.luau level=10 pilot=novicej offset=0.9   # traza un vuelo (y cada golpe)
 python3 tools/sim/run.py drivers/audit.luau              # regla de oro (MapDresser.audit) en todos los niveles
 python3 tools/sim/run.py drivers/layout.luau             # trazado: extensión, separación entre filas y SVG
 python3 tools/sim/run.py drivers/leaderboard.luau        # DuoLeaderboard y PlayerStats (medallas, ajustes) con DataStores falsos
