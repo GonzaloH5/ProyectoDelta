@@ -10,7 +10,7 @@
 --   · El trazado del corredor se escribe como órdenes de "tortuga": recto, curva, subir/bajar, estrechar.
 --   · Paredes y suelo son mortales (como en el juego), el techo se roza sin chocar (limita la altura).
 --   · Obstáculos DENTRO del corredor, nunca ventanas: lomas (subir), vigas colgadas (bajar),
---     salientes de pared (apartarse). Anillos amarillos = guía visual, se atraviesan.
+--     salientes de pared (apartarse), pilares exentos (rodear). Anillos amarillos = guía visual, se atraviesan.
 --   · Entre niveles: valle abierto con isla de descanso; cada corredor empieza en la boca de un acantilado.
 --
 -- Escala del ala (GliderConfig actual): avance 60 studs/s · radio de giro mínimo ~51, medio ~82 ·
@@ -20,6 +20,11 @@
 -- Vestido visual: tras generar cada nivel/valle, MapDresser lo "viste" con el bioma de su capítulo (Biomes).
 -- .build({ dress = false }) genera el blockout puro (para depurar la jugabilidad). DRESS_LEVELS limita
 -- hasta qué nivel se viste mientras el pase visual está a medias.
+--
+-- Trazado en filas (para que 50 niveles no se alejen del origen ni se crucen): 1-10 van hacia +X y cada
+-- pareja 11-12, 21-22, 31-32 y 41-42 gira 90° + 90° (180°), así que las filas se alternan +X / -X, separadas
+-- ~4.000 studs. Los demás niveles deben acabar con el mismo rumbo con el que empiezan (curvas que se compensan).
+-- tools/sim (fuera de Studio) comprueba la separación, la regla de dificultad y la regla de oro.
 
 local DevTools = game:GetService("ServerScriptService").Glider.DevTools
 local Biomes = require(DevTools.Biomes:Clone())
@@ -27,7 +32,7 @@ local MapDresser = require(DevTools.MapDresser:Clone())
 
 local MapBuilder = {}
 
-local DRESS_LEVELS = 10 -- se visten los niveles hasta este (y sus valles); más allá queda el blockout
+local DRESS_LEVELS = 50 -- se visten los niveles hasta este (y sus valles); más allá queda el blockout
 
 local CRUISE = 400 -- altitud del despegue
 local START = Vector3.new(100, CRUISE, 0) -- comienzo del valle inicial (fondo de la StartIsland)
@@ -416,6 +421,23 @@ local function makeContext(level: Model, frames, marks)
 		ctx.guide(s, u, 0, 100, 85)
 	end
 
+	-- PILAR exento (planta de rombo, del suelo a por encima del techo): hay que rodearlo por un lado.
+	-- u = centro lateral (+ derecha) · width = ancho que tapa (diagonal del rombo) · pass = lado del paso
+	-- (-1 izquierda, +1 derecha): la línea ideal va por el centro del hueco entre el pilar y esa pared.
+	function ctx.pillar(s, u, width, pass)
+		local f = at(s)
+		local bottom, top = -f.height / 2 - 30, f.height / 2 + RIM
+		local center = f.pos + rightOf(f.heading) * u + Vector3.new(0, (bottom + top) / 2, 0)
+		local side = width / math.sqrt(2)
+		local part = newPart(features, nextName("Pillar"), "Obstacle", Vector3.new(side, top - bottom, side), CFrame.lookAt(center, center + forwardOf(f.heading)) * CFrame.Angles(0, math.rad(45), 0))
+		part:SetAttribute("Pass", pass)
+		local edge = u + pass * width / 2 -- borde del pilar del lado del paso
+		local wall = pass * f.width / 2
+		local lane = (edge + wall) / 2
+		ctx.point(s, lane, 0)
+		ctx.guide(s, lane, 0, math.clamp(math.abs(wall - edge) - 24, 40, 100), 85)
+	end
+
 	return ctx
 end
 
@@ -447,11 +469,14 @@ local function buildRoute(level: Model, frames, ctx)
 	end
 end
 
--- ── Los 10 niveles base ───────────────────────────────────────────────
+-- ── Los 50 niveles ────────────────────────────────────────────────────
 -- width/height = sección del corredor (ancho × alto libre). path = trazado. features = obstáculos/guías.
--- Fáciles a propósito: son la BASE de un juego de ~50 niveles. Nada de ventanas ni precisión fuerte.
+-- 10 capítulos de 5 niveles (un bioma cada uno): como mucho una idea nueva por nivel y el último de cada
+-- capítulo combina las del capítulo. Dificultad (FlightTester.RULES): 1-10 aprender, 11-25 practicar,
+-- 26-50 dominar. Los capítulos 1-2 son fáciles a propósito: nada de ventanas ni precisión fuerte.
 
 local LEVELS = {
+	-- ── Capítulo 1 · Pradera (1-5): lo básico ───────────────────────────────
 	{ -- 01: subir y bajar en un corredor recto y muy amplio.
 		title = "Up and Down",
 		width = 300,
@@ -526,6 +551,8 @@ local LEVELS = {
 			c.guide(900, 0, 0)
 		end,
 	},
+
+	-- ── Capítulo 2 · Cañón rojo (6-10): estrechamientos y correcciones ────────
 	{ -- 06: descenso sostenido (~11°: mantenerse cerca del centro).
 		title = "Long Descent",
 		width = 280,
@@ -626,6 +653,916 @@ local LEVELS = {
 			c.lintel(b + 560, 15)
 		end,
 	},
+
+	-- ── Capítulo 3 · Bosque otoñal (11-15): giros largos y colinas ─────────
+	-- 11 y 12 dan la vuelta al recorrido (90° + 90° a la izquierda): la fila siguiente vuelve hacia -X.
+	{ -- 11: primer giro largo: 90° a la izquierda en dos curvas amplias, con una colina entre ellas.
+		title = "Autumn Bend",
+		width = 280,
+		height = 210,
+		path = {
+			{ kind = "straight", length = 300 },
+			{ kind = "arc", angle = 45, radius = 520 },
+			{ kind = "mark", name = "hill" },
+			{ kind = "straight", length = 720 },
+			{ kind = "arc", angle = 45, radius = 520 },
+			{ kind = "straight", length = 300 },
+		},
+		features = function(c)
+			c.guide(300 + 204, 0, 0)
+			c.ridge(c.mark("hill") + 400, 15, 18, 25)
+			c.guide(300 + 408 + 720 + 204, 0, 0)
+		end,
+	},
+	{ -- 12: colinas seguidas (una detrás de otra) y el segundo giro de 90°.
+		title = "Rolling Hills",
+		width = 280,
+		height = 210,
+		path = {
+			{ kind = "straight", length = 250 },
+			{ kind = "arc", angle = 45, radius = 560 },
+			{ kind = "mark", name = "hills" },
+			{ kind = "straight", length = 1900 },
+			{ kind = "arc", angle = 45, radius = 560 },
+			{ kind = "straight", length = 250 },
+		},
+		features = function(c)
+			local a = c.mark("hills")
+			c.ridge(a + 420, 10, 18, 22)
+			c.ridge(a + 1000, 12, 18, 22)
+			c.ridge(a + 1580, 15, 18, 22)
+		end,
+	},
+	{ -- 13: túnel bajo (techo a 150) con curvas suaves: poco margen para subir o bajar.
+		title = "Canopy Tunnel",
+		width = 260,
+		height = 210,
+		path = {
+			{ kind = "straight", length = 250 },
+			{ kind = "straight", length = 250, height = 150 },
+			{ kind = "arc", angle = 30, radius = 420 },
+			{ kind = "arc", angle = -30, radius = 420 },
+			{ kind = "mark", name = "low" },
+			{ kind = "straight", length = 500 },
+			{ kind = "arc", angle = -30, radius = 420 },
+			{ kind = "arc", angle = 30, radius = 420 },
+			{ kind = "straight", length = 250, height = 210 },
+			{ kind = "straight", length = 200 },
+		},
+		features = function(c)
+			c.lintel(c.mark("low") + 250, 8)
+		end,
+	},
+	{ -- 14: slalom más rápido y más justo: salientes de 100 cada 330 en 250 de ancho, curva suave al final.
+		title = "Leaf Slalom",
+		width = 250,
+		height = 210,
+		path = {
+			{ kind = "straight", length = 300 },
+			{ kind = "mark", name = "slalom" },
+			{ kind = "straight", length = 1600 },
+			{ kind = "arc", angle = 25, radius = 450 },
+			{ kind = "arc", angle = -25, radius = 450 },
+			{ kind = "straight", length = 300 },
+		},
+		features = function(c)
+			local a = c.mark("slalom")
+			c.promontory(a + 250, -1, 100)
+			c.promontory(a + 580, 1, 100)
+			c.promontory(a + 910, -1, 100)
+			c.promontory(a + 1240, 1, 100)
+		end,
+	},
+	{ -- 15: prueba del capítulo: giro largo, colinas, túnel bajo y slalom.
+		title = "Autumn Trial",
+		width = 260,
+		height = 200,
+		path = {
+			{ kind = "straight", length = 250 },
+			{ kind = "arc", angle = -50, radius = 500 },
+			{ kind = "mark", name = "hills" },
+			{ kind = "straight", length = 1250 },
+			{ kind = "arc", angle = 50, radius = 500 },
+			{ kind = "straight", length = 250, height = 150 },
+			{ kind = "mark", name = "low" },
+			{ kind = "straight", length = 400 },
+			{ kind = "straight", length = 250, height = 200 },
+			{ kind = "mark", name = "slalom" },
+			{ kind = "straight", length = 1100 },
+			{ kind = "straight", length = 200 },
+		},
+		features = function(c)
+			local a = c.mark("hills")
+			c.ridge(a + 380, 10, 18, 22)
+			c.ridge(a + 900, 12, 18, 22)
+			c.lintel(c.mark("low") + 200, 8)
+			local b = c.mark("slalom")
+			c.promontory(b + 250, -1, 80)
+			c.promontory(b + 580, 1, 80)
+			c.promontory(b + 910, -1, 80)
+		end,
+	},
+
+	-- ── Capítulo 4 · Mesetas del desierto (16-20): subir y bajar con obstáculos ─
+	{ -- 16: subida en escalones: tramos de subida (~13°) separados por rellanos; un saliente en el segundo.
+		title = "Mesa Steps",
+		width = 240,
+		height = 200,
+		path = {
+			{ kind = "straight", length = 250 },
+			{ kind = "straight", length = 450, rise = 80 },
+			{ kind = "straight", length = 350 },
+			{ kind = "straight", length = 450, rise = 110 },
+			{ kind = "mark", name = "landing" },
+			{ kind = "straight", length = 350 },
+			{ kind = "straight", length = 450, rise = 110 },
+			{ kind = "straight", length = 250 },
+		},
+		features = function(c)
+			c.guide(250 + 450 + 175, 0, 0)
+			c.promontory(c.mark("landing") + 175, -1, 80)
+		end,
+	},
+	{ -- 17: bajada larga con vigas colgadas: agacharse mientras se desciende.
+		title = "Canyon Drop",
+		width = 270,
+		height = 210,
+		path = {
+			{ kind = "straight", length = 250 },
+			{ kind = "mark", name = "drop" },
+			{ kind = "straight", length = 1500, rise = -300 },
+			{ kind = "straight", length = 250 },
+			{ kind = "arc", angle = -20, radius = 500 },
+			{ kind = "arc", angle = 20, radius = 500 },
+			{ kind = "straight", length = 200 },
+		},
+		features = function(c)
+			local a = c.mark("drop")
+			c.lintel(a + 450, 12)
+			c.lintel(a + 1050, 12)
+		end,
+	},
+	{ -- 18: curvas en zigzag que suben y bajan (más cerradas y largas que en el nivel 3).
+		title = "Switchbacks",
+		width = 240,
+		height = 200,
+		path = {
+			{ kind = "straight", length = 250 },
+			{ kind = "arc", angle = -45, radius = 320, rise = 60 },
+			{ kind = "straight", length = 180 },
+			{ kind = "arc", angle = 90, radius = 320, rise = -100 },
+			{ kind = "straight", length = 180 },
+			{ kind = "arc", angle = -90, radius = 320, rise = 80 },
+			{ kind = "straight", length = 180 },
+			{ kind = "arc", angle = 45, radius = 320, rise = -40 },
+			{ kind = "straight", length = 250 },
+		},
+		features = function() end,
+	},
+	{ -- 19: un saliente te aparta justo antes de un paso estrecho (170 × 150): hay que volver al centro.
+		title = "Mesa Gap",
+		width = 270,
+		height = 210,
+		path = {
+			{ kind = "straight", length = 300 },
+			{ kind = "mark", name = "gate" },
+			{ kind = "straight", length = 400 },
+			{ kind = "straight", length = 250, width = 170, height = 150 },
+			{ kind = "straight", length = 450 },
+			{ kind = "straight", length = 250, width = 270, height = 210 },
+			{ kind = "straight", length = 300 },
+			{ kind = "arc", angle = 25, radius = 450 },
+			{ kind = "arc", angle = -25, radius = 450 },
+			{ kind = "straight", length = 200 },
+		},
+		features = function(c)
+			c.promontory(c.mark("gate") + 200, 1, 95)
+		end,
+	},
+	{ -- 20: prueba del capítulo: escalones, zigzag bajando, bajada con viga y paso estrecho.
+		title = "Mesa Run",
+		width = 260,
+		height = 200,
+		path = {
+			{ kind = "straight", length = 250 },
+			{ kind = "straight", length = 400, rise = 70 },
+			{ kind = "straight", length = 200 },
+			{ kind = "straight", length = 400, rise = 70 },
+			{ kind = "mark", name = "top" },
+			{ kind = "straight", length = 300 },
+			{ kind = "arc", angle = -40, radius = 380, rise = -40 },
+			{ kind = "arc", angle = 40, radius = 380, rise = -40 },
+			{ kind = "mark", name = "drop" },
+			{ kind = "straight", length = 800, rise = -60 },
+			{ kind = "straight", length = 200 },
+			{ kind = "straight", length = 200, width = 190, height = 160 },
+			{ kind = "straight", length = 300 },
+			{ kind = "straight", length = 200, width = 260, height = 200 },
+			{ kind = "straight", length = 200 },
+		},
+		features = function(c)
+			c.guide(c.mark("top") + 150, 0, 0)
+			local a = c.mark("drop")
+			c.lintel(a + 400, 12)
+			c.promontory(a + 900, 1, 70)
+		end,
+	},
+
+	-- ── Capítulo 5 · Glaciar (21-25): precisión en pasillos de hielo ────────
+	-- 21 y 22 dan la segunda vuelta (90° + 90° a la derecha): la fila siguiente vuelve hacia +X.
+	{ -- 21: giro de 90° a la derecha con el corredor estrechado a 220 en las curvas.
+		title = "Glacier Bend",
+		width = 260,
+		height = 210,
+		path = {
+			{ kind = "straight", length = 300 },
+			{ kind = "straight", length = 150, width = 220 },
+			{ kind = "arc", angle = -45, radius = 480 },
+			{ kind = "mark", name = "mid" },
+			{ kind = "straight", length = 700, rise = 60 },
+			{ kind = "arc", angle = -45, radius = 480 },
+			{ kind = "straight", length = 150, width = 260 },
+			{ kind = "straight", length = 300 },
+		},
+		features = function(c)
+			c.guide(300 + 150 + 188, 0, 0)
+			c.lintel(c.mark("mid") + 350, 12)
+			c.guide(300 + 150 + 377 + 700 + 188, 0, 0)
+		end,
+	},
+	{ -- 22: grieta: corredor estrecho y alto (170 × 240) con dos salientes pequeños, y el segundo giro de 90°.
+		title = "Crevasse",
+		width = 240,
+		height = 220,
+		path = {
+			{ kind = "straight", length = 250 },
+			{ kind = "straight", length = 200, width = 170, height = 240 },
+			{ kind = "arc", angle = -45, radius = 520 },
+			{ kind = "mark", name = "deep" },
+			{ kind = "straight", length = 900, rise = 100 },
+			{ kind = "arc", angle = -45, radius = 520 },
+			{ kind = "straight", length = 200, width = 240, height = 220 },
+			{ kind = "straight", length = 250 },
+		},
+		features = function(c)
+			local a = c.mark("deep")
+			c.promontory(a + 250, 1, 45)
+			c.promontory(a + 650, -1, 45)
+		end,
+	},
+	{ -- 23: carámbanos: vigas seguidas de distinto largo (arriba-abajo a ritmo).
+		title = "Icicles",
+		width = 250,
+		height = 210,
+		path = {
+			{ kind = "straight", length = 300 },
+			{ kind = "mark", name = "ice" },
+			{ kind = "straight", length = 1600, rise = 60 },
+			{ kind = "arc", angle = 25, radius = 450 },
+			{ kind = "arc", angle = -25, radius = 450 },
+			{ kind = "straight", length = 250 },
+		},
+		features = function(c)
+			local a = c.mark("ice")
+			c.lintel(a + 250, 10)
+			c.lintel(a + 600, 18)
+			c.lintel(a + 950, 12)
+			c.lintel(a + 1300, 20)
+		end,
+	},
+	{ -- 24: salientes en las curvas, en la pared de dentro: hay que abrirse para pasar.
+		title = "Frozen Slalom",
+		width = 240,
+		height = 210,
+		path = {
+			{ kind = "straight", length = 300 },
+			{ kind = "arc", angle = 35, radius = 420 },
+			{ kind = "straight", length = 150 },
+			{ kind = "arc", angle = -70, radius = 420 },
+			{ kind = "straight", length = 150 },
+			{ kind = "arc", angle = 70, radius = 420 },
+			{ kind = "straight", length = 150 },
+			{ kind = "arc", angle = -35, radius = 420 },
+			{ kind = "straight", length = 300 },
+		},
+		features = function(c)
+			local q = 420 * math.rad(35) -- largo de un arco de 35°
+			c.promontory(300 + q / 2, -1, 85)
+			c.promontory(300 + q + 150 + q, 1, 95)
+			c.promontory(300 + q + 150 + 2 * q + 150 + q, -1, 95)
+			c.promontory(300 + q + 150 + 2 * q + 150 + 2 * q + 150 + q / 2, 1, 85)
+		end,
+	},
+	{ -- 25: prueba del capítulo: curva estrecha, carámbanos, grieta y salientes en curva.
+		title = "Glacier Trial",
+		width = 240,
+		height = 210,
+		path = {
+			{ kind = "straight", length = 250 },
+			{ kind = "straight", length = 150, width = 200 },
+			{ kind = "arc", angle = 40, radius = 420 },
+			{ kind = "arc", angle = -40, radius = 420 },
+			{ kind = "straight", length = 150, width = 240 },
+			{ kind = "mark", name = "ice" },
+			{ kind = "straight", length = 900, rise = 60 },
+			{ kind = "straight", length = 200, width = 190, height = 230 },
+			{ kind = "straight", length = 500 },
+			{ kind = "straight", length = 200, width = 240, height = 210 },
+			{ kind = "mark", name = "curves" },
+			{ kind = "arc", angle = -35, radius = 420 },
+			{ kind = "arc", angle = 35, radius = 420 },
+			{ kind = "straight", length = 250 },
+		},
+		features = function(c)
+			local a = c.mark("ice")
+			c.lintel(a + 200, 12)
+			c.lintel(a + 500, 18)
+			c.lintel(a + 800, 12)
+			local b = c.mark("curves")
+			local q = 420 * math.rad(35)
+			c.promontory(b + q / 2, 1, 60)
+			c.promontory(b + q + q / 2, -1, 60)
+		end,
+	},
+
+	-- ── Capítulo 6 · Acantilados (26-30): maniobras fuertes (desde aquí basta con el piloto completo) ─
+	{ -- 26: picado largo (18°) y, al salir, una colina alta: hay que recuperar altura rápido.
+		title = "Cliff Dive",
+		width = 280,
+		height = 220,
+		path = {
+			{ kind = "straight", length = 300 },
+			{ kind = "straight", length = 800, rise = -250 },
+			{ kind = "straight", length = 300 },
+			{ kind = "mark", name = "pull" },
+			{ kind = "straight", length = 800 },
+			{ kind = "straight", length = 400 },
+			{ kind = "arc", angle = 30, radius = 400 },
+			{ kind = "arc", angle = -30, radius = 400 },
+			{ kind = "straight", length = 250 },
+		},
+		features = function(c)
+			c.ridge(c.mark("pull") + 400, 25, 21, 25)
+		end,
+	},
+	{ -- 27: farallones: pilares exentos en mitad del corredor; se rodean por el lado del anillo.
+		title = "Sea Stacks",
+		width = 270,
+		height = 210,
+		path = {
+			{ kind = "straight", length = 300 },
+			{ kind = "mark", name = "stacks" },
+			{ kind = "straight", length = 1900 },
+			{ kind = "arc", angle = -30, radius = 450 },
+			{ kind = "arc", angle = 30, radius = 450 },
+			{ kind = "straight", length = 250 },
+		},
+		features = function(c)
+			local a = c.mark("stacks")
+			c.pillar(a + 300, -35, 100, 1)
+			c.pillar(a + 700, 35, 100, -1)
+			c.pillar(a + 1100, -25, 110, 1)
+			c.pillar(a + 1500, 25, 110, -1)
+		end,
+	},
+	{ -- 28: rompientes: colina y viga casi seguidas (subir y enseguida bajar), tres veces.
+		title = "Breakers",
+		width = 270,
+		height = 220,
+		path = {
+			{ kind = "straight", length = 250 },
+			{ kind = "mark", name = "waves" },
+			{ kind = "straight", length = 2300 },
+			{ kind = "straight", length = 250 },
+		},
+		features = function(c)
+			local a = c.mark("waves")
+			c.ridge(a + 400, 20, 22, 30)
+			c.lintel(a + 700, 20)
+			c.ridge(a + 1150, 25, 22, 30)
+			c.lintel(a + 1450, 22)
+			c.ridge(a + 1900, 25, 22, 30)
+			c.lintel(a + 2200, 25)
+		end,
+	},
+	{ -- 29: horquillas: curvas de radio 180 encadenadas en 200 de ancho, subiendo y bajando.
+		title = "Hairpins",
+		width = 200,
+		height = 200,
+		path = {
+			{ kind = "straight", length = 300 },
+			{ kind = "arc", angle = 60, radius = 180, rise = 40 },
+			{ kind = "straight", length = 120 },
+			{ kind = "arc", angle = -120, radius = 180, rise = -60 },
+			{ kind = "straight", length = 120 },
+			{ kind = "arc", angle = 120, radius = 180, rise = 60 },
+			{ kind = "straight", length = 120 },
+			{ kind = "arc", angle = -60, radius = 180, rise = 20 },
+			{ kind = "straight", length = 300 },
+		},
+		features = function() end,
+	},
+	{ -- 30: prueba del capítulo: picado y colina, farallones, horquillas y rompiente.
+		title = "Cliff Trial",
+		width = 260,
+		height = 210,
+		path = {
+			{ kind = "straight", length = 250 },
+			{ kind = "straight", length = 600, rise = -140 },
+			{ kind = "straight", length = 200 },
+			{ kind = "mark", name = "pull" },
+			{ kind = "straight", length = 700 },
+			{ kind = "straight", length = 150 },
+			{ kind = "mark", name = "stacks" },
+			{ kind = "straight", length = 950, rise = 80 },
+			{ kind = "arc", angle = 60, radius = 240 },
+			{ kind = "arc", angle = -60, radius = 240 },
+			{ kind = "mark", name = "waves" },
+			{ kind = "straight", length = 1000, rise = 60 },
+			{ kind = "straight", length = 250 },
+		},
+		features = function(c)
+			c.ridge(c.mark("pull") + 380, 20, 21, 25)
+			local a = c.mark("stacks")
+			c.pillar(a + 250, -35, 90, 1)
+			c.pillar(a + 650, 35, 90, -1)
+			local b = c.mark("waves")
+			c.ridge(b + 380, 20, 22, 30)
+			c.lintel(b + 700, 20)
+		end,
+	},
+
+	-- ── Capítulo 7 · Selva (31-35): dos ejes a la vez ────────────────────────
+	-- 31 y 32 dan la tercera vuelta (90° + 90° a la izquierda): la fila siguiente vuelve hacia -X.
+	{ -- 31: giro de 90° a la izquierda con una arboleda de pilares entre las dos curvas.
+		title = "Jungle Bend",
+		width = 260,
+		height = 210,
+		path = {
+			{ kind = "straight", length = 300 },
+			{ kind = "arc", angle = 45, radius = 500 },
+			{ kind = "mark", name = "grove" },
+			{ kind = "straight", length = 1100 },
+			{ kind = "arc", angle = 45, radius = 500 },
+			{ kind = "straight", length = 300 },
+		},
+		features = function(c)
+			local a = c.mark("grove")
+			c.pillar(a + 300, 35, 110, -1)
+			c.pillar(a + 650, -35, 110, 1)
+		end,
+	},
+	{ -- 32: cortina de lianas: vigas colgadas en mitad de las curvas, y el segundo giro de 90°.
+		title = "Vine Curtain",
+		width = 270,
+		height = 210,
+		path = {
+			{ kind = "straight", length = 250 },
+			{ kind = "arc", angle = 45, radius = 520 },
+			{ kind = "mark", name = "a" },
+			{ kind = "straight", length = 700 },
+			{ kind = "arc", angle = 45, radius = 520 },
+			{ kind = "straight", length = 250 },
+		},
+		features = function(c)
+			local q = 520 * math.rad(45)
+			c.lintel(250 + q / 2, 15)
+			c.lintel(c.mark("a") + 350, 22)
+			c.lintel(c.mark("a") + 700 + q / 2, 15)
+		end,
+	},
+	{ -- 33: por encima y por un lado: colina y enseguida un saliente; viga y enseguida un pilar.
+		title = "Over and Around",
+		width = 270,
+		height = 220,
+		path = {
+			{ kind = "straight", length = 300 },
+			{ kind = "mark", name = "d" },
+			{ kind = "straight", length = 2300 },
+			{ kind = "straight", length = 250 },
+		},
+		features = function(c)
+			local a = c.mark("d")
+			c.ridge(a + 400, 20, 22, 28)
+			c.promontory(a + 620, 1, 90)
+			c.lintel(a + 1100, 20)
+			c.pillar(a + 1350, -30, 100, 1)
+			c.ridge(a + 1800, 25, 22, 28)
+			c.promontory(a + 2030, -1, 95)
+		end,
+	},
+	{ -- 34: laberinto de árboles: pilares alternados cada 320, subiendo.
+		title = "Tree Maze",
+		width = 270,
+		height = 210,
+		path = {
+			{ kind = "straight", length = 300 },
+			{ kind = "mark", name = "maze" },
+			{ kind = "straight", length = 2000, rise = 80 },
+			{ kind = "arc", angle = 30, radius = 400 },
+			{ kind = "arc", angle = -30, radius = 400 },
+			{ kind = "straight", length = 250 },
+		},
+		features = function(c)
+			local a = c.mark("maze")
+			c.pillar(a + 250, -30, 110, 1)
+			c.pillar(a + 570, 30, 110, -1)
+			c.pillar(a + 890, -35, 110, 1)
+			c.pillar(a + 1210, 35, 110, -1)
+			c.pillar(a + 1530, -30, 110, 1)
+			c.pillar(a + 1850, 30, 110, -1)
+		end,
+	},
+	{ -- 35: prueba del capítulo: viga en curva, colina y saliente, y laberinto bajando.
+		title = "Jungle Trial",
+		width = 260,
+		height = 210,
+		path = {
+			{ kind = "straight", length = 250 },
+			{ kind = "arc", angle = 40, radius = 450 },
+			{ kind = "arc", angle = -40, radius = 450 },
+			{ kind = "mark", name = "combo" },
+			{ kind = "straight", length = 900 },
+			{ kind = "mark", name = "maze" },
+			{ kind = "straight", length = 1000, rise = -80 },
+			{ kind = "arc", angle = -40, radius = 450 },
+			{ kind = "arc", angle = 40, radius = 450 },
+			{ kind = "straight", length = 250 },
+		},
+		features = function(c)
+			c.lintel(250 + 450 * math.rad(40) / 2, 15)
+			local a = c.mark("combo")
+			c.ridge(a + 380, 20, 22, 28)
+			c.promontory(a + 600, -1, 90)
+			local b = c.mark("maze")
+			c.pillar(b + 200, -30, 100, 1)
+			c.pillar(b + 500, 30, 100, -1)
+			c.pillar(b + 800, -30, 100, 1)
+		end,
+	},
+
+	-- ── Capítulo 8 · Volcán (36-40): más rápido y más justo ──────────────────
+	{ -- 36: tubo de lava: bajo (140) y estrecho (210) a la vez, con curvas y una viga.
+		title = "Lava Tube",
+		width = 250,
+		height = 200,
+		path = {
+			{ kind = "straight", length = 250 },
+			{ kind = "straight", length = 200, width = 210, height = 140 },
+			{ kind = "arc", angle = 35, radius = 380 },
+			{ kind = "arc", angle = -35, radius = 380 },
+			{ kind = "mark", name = "tube" },
+			{ kind = "straight", length = 600, rise = 60 },
+			{ kind = "arc", angle = -35, radius = 380 },
+			{ kind = "arc", angle = 35, radius = 380 },
+			{ kind = "straight", length = 200, width = 250, height = 200 },
+			{ kind = "straight", length = 200 },
+		},
+		features = function(c)
+			c.lintel(c.mark("tube") + 300, 5)
+		end,
+	},
+	{ -- 37: corriente ascendente: subida larga (14°) esquivando salientes.
+		title = "Updraft",
+		width = 240,
+		height = 210,
+		path = {
+			{ kind = "straight", length = 250 },
+			{ kind = "mark", name = "climb" },
+			{ kind = "straight", length = 1800, rise = 450 },
+			{ kind = "straight", length = 250 },
+			{ kind = "arc", angle = 30, radius = 420 },
+			{ kind = "arc", angle = -30, radius = 420 },
+			{ kind = "straight", length = 200 },
+		},
+		features = function(c)
+			local a = c.mark("climb")
+			c.promontory(a + 350, -1, 105)
+			c.promontory(a + 700, 1, 105)
+			c.promontory(a + 1050, -1, 105)
+			c.promontory(a + 1400, 1, 105)
+		end,
+	},
+	{ -- 38: slalom de magma: salientes de 105 cada 240 en 240 de ancho.
+		title = "Magma Slalom",
+		width = 240,
+		height = 210,
+		path = {
+			{ kind = "straight", length = 300 },
+			{ kind = "mark", name = "slalom" },
+			{ kind = "straight", length = 1900 },
+			{ kind = "arc", angle = -25, radius = 450 },
+			{ kind = "arc", angle = 25, radius = 450 },
+			{ kind = "straight", length = 250 },
+		},
+		features = function(c)
+			local a = c.mark("slalom")
+			for k = 0, 6 do
+				c.promontory(a + 250 + 240 * k, if k % 2 == 0 then -1 else 1, 105)
+			end
+		end,
+	},
+	{ -- 39: espiral de ceniza: dos giros de 100° bajando, con salientes en la pared de fuera.
+		title = "Ash Spiral",
+		width = 250,
+		height = 210,
+		path = {
+			{ kind = "straight", length = 300 },
+			{ kind = "arc", angle = 100, radius = 330, rise = -185 },
+			{ kind = "straight", length = 200 },
+			{ kind = "arc", angle = -100, radius = 330, rise = -185 },
+			{ kind = "mark", name = "exit" },
+			{ kind = "straight", length = 500 },
+			{ kind = "straight", length = 200 },
+		},
+		features = function(c)
+			local q = 330 * math.rad(100)
+			c.promontory(300 + q / 2, 1, 80)
+			c.promontory(300 + q + 200 + q / 2, -1, 80)
+			c.lintel(c.mark("exit") + 250, 18)
+		end,
+	},
+	{ -- 40: prueba del capítulo: tubo de lava, subida con salientes, espiral y slalom.
+		title = "Volcano Trial",
+		width = 240,
+		height = 200,
+		path = {
+			{ kind = "straight", length = 250 },
+			{ kind = "straight", length = 200, width = 200, height = 145 },
+			{ kind = "mark", name = "tube" },
+			{ kind = "straight", length = 500 },
+			{ kind = "straight", length = 200, width = 240, height = 200 },
+			{ kind = "mark", name = "climb" },
+			{ kind = "straight", length = 1200, rise = 250 },
+			{ kind = "arc", angle = 90, radius = 340, rise = -120 },
+			{ kind = "arc", angle = -90, radius = 340, rise = -120 },
+			{ kind = "mark", name = "slalom" },
+			{ kind = "straight", length = 1100 },
+			{ kind = "straight", length = 250 },
+		},
+		features = function(c)
+			c.lintel(c.mark("tube") + 250, 5)
+			local a = c.mark("climb")
+			c.promontory(a + 350, -1, 100)
+			c.promontory(a + 700, 1, 100)
+			local b = c.mark("slalom")
+			c.promontory(b + 250, 1, 105)
+			c.promontory(b + 490, -1, 105)
+			c.promontory(b + 730, 1, 105)
+		end,
+	},
+
+	-- ── Capítulo 9 · Cristal (41-45): pilares y combinaciones justas ────────
+	-- 41 y 42 dan la cuarta vuelta (90° + 90° a la derecha): la última fila vuelve hacia +X.
+	{ -- 41: giro de 90° a la derecha con pilares al salir de las curvas.
+		title = "Crystal Bend",
+		width = 270,
+		height = 210,
+		path = {
+			{ kind = "straight", length = 300 },
+			{ kind = "arc", angle = -45, radius = 480 },
+			{ kind = "mark", name = "a" },
+			{ kind = "straight", length = 900 },
+			{ kind = "arc", angle = -45, radius = 480 },
+			{ kind = "mark", name = "b" },
+			{ kind = "straight", length = 500 },
+			{ kind = "straight", length = 100 },
+		},
+		features = function(c)
+			local a = c.mark("a")
+			c.pillar(a + 250, 30, 100, -1)
+			c.pillar(a + 650, -30, 100, 1)
+			c.pillar(c.mark("b") + 250, 0, 90, 1)
+		end,
+	},
+	{ -- 42: sala de prismas: pilares en un corredor de 230 y el segundo giro de 90°.
+		title = "Prism Hall",
+		width = 230,
+		height = 210,
+		path = {
+			{ kind = "straight", length = 250 },
+			{ kind = "arc", angle = -45, radius = 500 },
+			{ kind = "mark", name = "hall" },
+			{ kind = "straight", length = 1200 },
+			{ kind = "arc", angle = -45, radius = 500 },
+			{ kind = "straight", length = 250 },
+		},
+		features = function(c)
+			local a = c.mark("hall")
+			c.pillar(a + 250, -25, 75, 1)
+			c.pillar(a + 550, 25, 75, -1)
+			c.pillar(a + 850, -25, 75, 1)
+		end,
+	},
+	{ -- 43: olas de esquirlas: colinas y vigas con un pilar entre cada una.
+		title = "Shard Waves",
+		width = 260,
+		height = 220,
+		path = {
+			{ kind = "straight", length = 250 },
+			{ kind = "mark", name = "w" },
+			{ kind = "straight", length = 2400 },
+			{ kind = "straight", length = 250 },
+		},
+		features = function(c)
+			local a = c.mark("w")
+			c.ridge(a + 400, 25, 22, 30)
+			c.pillar(a + 800, 0, 80, -1)
+			c.lintel(a + 1150, 25)
+			c.pillar(a + 1450, 0, 80, 1)
+			c.ridge(a + 1900, 25, 22, 30)
+			c.lintel(a + 2300, 20)
+		end,
+	},
+	{ -- 44: laberinto de cristal: saliente, pilar, saliente… cada 250.
+		title = "Crystal Maze",
+		width = 240,
+		height = 210,
+		path = {
+			{ kind = "straight", length = 300 },
+			{ kind = "mark", name = "m" },
+			{ kind = "straight", length = 2000 },
+			{ kind = "arc", angle = 30, radius = 400 },
+			{ kind = "arc", angle = -30, radius = 400 },
+			{ kind = "straight", length = 250 },
+		},
+		features = function(c)
+			local a = c.mark("m")
+			c.promontory(a + 250, -1, 100)
+			c.pillar(a + 500, 30, 90, -1)
+			c.promontory(a + 750, 1, 100)
+			c.pillar(a + 1000, -30, 90, 1)
+			c.promontory(a + 1250, -1, 100)
+			c.pillar(a + 1500, 30, 90, -1)
+			c.promontory(a + 1750, 1, 100)
+		end,
+	},
+	{ -- 45: prueba del capítulo: curvas, sala de prismas, ola con pilar y laberinto.
+		title = "Crystal Trial",
+		width = 240,
+		height = 210,
+		path = {
+			{ kind = "straight", length = 250 },
+			{ kind = "arc", angle = 40, radius = 420 },
+			{ kind = "arc", angle = -40, radius = 420 },
+			{ kind = "mark", name = "hall" },
+			{ kind = "straight", length = 800 },
+			{ kind = "mark", name = "wave" },
+			{ kind = "straight", length = 1100, rise = 80 },
+			{ kind = "mark", name = "maze" },
+			{ kind = "straight", length = 900 },
+			{ kind = "straight", length = 250 },
+		},
+		features = function(c)
+			local a = c.mark("hall")
+			c.pillar(a + 200, -25, 75, 1)
+			c.pillar(a + 500, 25, 75, -1)
+			local b = c.mark("wave")
+			c.ridge(b + 380, 22, 22, 30)
+			c.pillar(b + 750, 0, 80, 1)
+			c.lintel(b + 1000, 22)
+			local m = c.mark("maze")
+			c.promontory(m + 200, -1, 90)
+			c.pillar(m + 480, 30, 90, -1)
+			c.promontory(m + 760, 1, 90)
+		end,
+	},
+
+	-- ── Capítulo 10 · Cielo final (46-50): el examen, a gran altura ─────────
+	{ -- 46: ascenso al cielo: subida larga (11°) con vigas por el camino.
+		title = "Sky Ascent",
+		width = 260,
+		height = 220,
+		path = {
+			{ kind = "straight", length = 250 },
+			{ kind = "mark", name = "up" },
+			{ kind = "straight", length = 1800, rise = 350 },
+			{ kind = "straight", length = 300 },
+			{ kind = "arc", angle = -30, radius = 420 },
+			{ kind = "arc", angle = 30, radius = 420 },
+			{ kind = "straight", length = 250 },
+		},
+		features = function(c)
+			local a = c.mark("up")
+			c.lintel(a + 400, 15)
+			c.lintel(a + 900, 20)
+			c.lintel(a + 1400, 22)
+		end,
+	},
+	{ -- 47: surf entre nubes: colina y viga cada ~260 (subir y bajar sin respiro), tres veces.
+		title = "Cloud Surf",
+		width = 260,
+		height = 220,
+		path = {
+			{ kind = "straight", length = 250 },
+			{ kind = "mark", name = "surf" },
+			{ kind = "straight", length = 2500 },
+			{ kind = "straight", length = 250 },
+		},
+		features = function(c)
+			local a = c.mark("surf")
+			c.ridge(a + 400, 22, 22, 30)
+			c.lintel(a + 660, 22)
+			c.ridge(a + 1100, 25, 22, 30)
+			c.lintel(a + 1370, 25)
+			c.ridge(a + 1800, 25, 22, 30)
+			c.lintel(a + 2080, 25)
+		end,
+	},
+	{ -- 48: slalom de tormenta: salientes y pilares en mitad de curvas encadenadas.
+		title = "Storm Slalom",
+		width = 230,
+		height = 210,
+		path = {
+			{ kind = "straight", length = 300 },
+			{ kind = "arc", angle = 40, radius = 400 },
+			{ kind = "straight", length = 150 },
+			{ kind = "arc", angle = -80, radius = 400 },
+			{ kind = "straight", length = 150 },
+			{ kind = "arc", angle = 80, radius = 400 },
+			{ kind = "straight", length = 150 },
+			{ kind = "arc", angle = -40, radius = 400 },
+			{ kind = "straight", length = 300 },
+		},
+		features = function(c)
+			local q = 400 * math.rad(40)
+			c.promontory(300 + q / 2, -1, 85)
+			c.pillar(300 + q + 150 + q, 30, 80, -1)
+			c.promontory(300 + q + 150 + 2 * q + 150 + q, -1, 90)
+			c.pillar(300 + q + 150 + 2 * q + 150 + 2 * q + 150 + q / 2, 25, 80, -1)
+		end,
+	},
+	{ -- 49: el guantelete: ola, pilar en curva, laberinto y vigas en subida, sin descanso.
+		title = "Heaven's Gauntlet",
+		width = 250,
+		height = 210,
+		path = {
+			{ kind = "straight", length = 250 },
+			{ kind = "mark", name = "surf" },
+			{ kind = "straight", length = 1000 },
+			{ kind = "arc", angle = 45, radius = 420 },
+			{ kind = "arc", angle = -45, radius = 420 },
+			{ kind = "mark", name = "maze" },
+			{ kind = "straight", length = 1000 },
+			{ kind = "mark", name = "climb" },
+			{ kind = "straight", length = 900, rise = 150 },
+			{ kind = "arc", angle = -45, radius = 420, rise = -60 },
+			{ kind = "arc", angle = 45, radius = 420, rise = -60 },
+			{ kind = "straight", length = 250 },
+		},
+		features = function(c)
+			local a = c.mark("surf")
+			c.ridge(a + 380, 22, 22, 30)
+			c.lintel(a + 650, 22)
+			c.pillar(a + 1000 + 420 * math.rad(45), -25, 80, 1)
+			local m = c.mark("maze")
+			c.promontory(m + 200, 1, 90)
+			c.pillar(m + 480, -30, 90, 1)
+			c.promontory(m + 760, -1, 90)
+			local b = c.mark("climb")
+			c.lintel(b + 300, 15)
+			c.lintel(b + 650, 20)
+		end,
+	},
+	{ -- 50: vuelo final: todo lo aprendido y un último picado hacia la meta.
+		title = "Final Flight",
+		width = 250,
+		height = 210,
+		path = {
+			{ kind = "straight", length = 300 },
+			{ kind = "mark", name = "a" },
+			{ kind = "straight", length = 900 },
+			{ kind = "arc", angle = 40, radius = 400 },
+			{ kind = "arc", angle = -40, radius = 400 },
+			{ kind = "mark", name = "b" },
+			{ kind = "straight", length = 1100 },
+			{ kind = "straight", length = 200, width = 190, height = 170 },
+			{ kind = "straight", length = 300 },
+			{ kind = "straight", length = 200, width = 250, height = 210 },
+			{ kind = "mark", name = "c" },
+			{ kind = "straight", length = 1000 },
+			{ kind = "mark", name = "d" },
+			{ kind = "straight", length = 1200, rise = -300 },
+			{ kind = "straight", length = 400 },
+		},
+		features = function(c)
+			local a = c.mark("a")
+			c.ridge(a + 380, 20, 22, 28)
+			c.promontory(a + 600, 1, 90)
+			c.lintel(a + 900 + 400 * math.rad(40) / 2, 18)
+			local b = c.mark("b")
+			c.pillar(b + 200, -30, 100, 1)
+			c.pillar(b + 500, 30, 100, -1)
+			c.pillar(b + 800, -30, 100, 1)
+			local d = c.mark("c")
+			c.ridge(d + 380, 22, 22, 30)
+			c.lintel(d + 660, 22)
+			local e = c.mark("d")
+			c.promontory(e + 300, -1, 85)
+			c.promontory(e + 600, 1, 85)
+			c.promontory(e + 900, -1, 85)
+		end,
+	},
 }
 
 -- ── Construcción ──────────────────────────────────────────────────────
@@ -664,7 +1601,7 @@ function MapBuilder.build(options): string
 	end
 	local map = Instance.new("Folder")
 	map.Name = "Map"
-	map:SetAttribute("DevStartLevel", 0) -- 1-10 = despegar directamente en ese nivel (pruebas)
+	map:SetAttribute("DevStartLevel", 0) -- 1-50 = despegar directamente en ese nivel (pruebas)
 	map.Parent = workspace
 	local devSpawns = newFolder(map, "DevSpawns")
 	local summary = {}

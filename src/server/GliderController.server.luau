@@ -19,6 +19,7 @@ local Shared = ReplicatedStorage:WaitForChild("Glider")
 local Config = require(Shared.GliderConfig)
 local Checkpoints = require(script.Parent.Checkpoints)
 local CollisionGroups = require(script.Parent.CollisionGroups)
+local DuoLeaderboard = require(script.Parent.DuoLeaderboard)
 local GliderSession = require(script.Parent.GliderSession)
 local LevelStreaming = require(script.Parent.LevelStreaming)
 local Lobby = require(script.Parent.Lobby)
@@ -29,6 +30,7 @@ CollisionGroups.setup()
 PlayerStats.start()
 Checkpoints.load(workspace:FindFirstChild("Map"))
 LevelStreaming.load(workspace:FindFirstChild("Map"))
+DuoLeaderboard.start(Checkpoints.count())
 
 -- La AlaDelta del mapa es la plantilla: marca dónde y cómo sale cada ala. Nadie vuela la original.
 local template = workspace:WaitForChild(Config.GliderName) :: Model
@@ -92,7 +94,7 @@ local function onSessionFinished(session: Session, reason: GliderSession.FinishR
 	end
 end
 
--- Pruebas: con el atributo DevStartLevel (1-10) en Workspace.Map, las alas despegan en
+-- Pruebas: con el atributo DevStartLevel (1-50) en Workspace.Map, las alas despegan en
 -- Map.DevSpawns.LevelNN en vez de en la StartIsland (y los niveles anteriores cuentan como superados).
 -- 0 o sin atributo = recorrido normal.
 local function devLaunchPoint(): (CFrame?, number)
@@ -155,21 +157,44 @@ local function startSession(players: { Player })
 end
 
 -- El ala cruzó un checkpoint: desde aquí reaparece, y ambos ven la pantalla de checkpoint.
+-- Récords (solo vuelos desde la salida): estadísticas de cada jugador y clasificación del dúo.
 local function reachCheckpoint(session: Session, checkpoint: Checkpoints.Checkpoint)
 	session:setCheckpoint(checkpoint.index, checkpoint.spawn, checkpoint.final)
 	publishLevel(session)
 	local counts = not devRuns[session]
-	for _, player in session:riders() do
+	local riders = session:riders()
+	local runTime = session.runTime
+	local info = checkpoint.info
+	if checkpoint.final then
+		info = table.clone(info)
+		info.time = runTime -- la pantalla de meta muestra el tiempo del recorrido
+	end
+	local personalBest: { [Player]: boolean } = {}
+	for _, player in riders do
 		LevelStreaming.setWindow(player, checkpoint.index)
-		remote:FireClient(player, "Checkpoint", checkpoint.info)
+		remote:FireClient(player, "Checkpoint", info)
 		if counts then
 			-- Solo récords: el siguiente vuelo vuelve a empezar en la salida.
 			PlayerStats.levelCleared(player, checkpoint.index)
 			if checkpoint.final then
-				PlayerStats.courseCompleted(player, session.runTime)
+				personalBest[player] = PlayerStats.courseCompleted(player, runTime)
 			end
 		end
 	end
+	if not counts then
+		return
+	end
+	-- En la meta, cada uno recibe su resultado cuando responde el almacén (récord del dúo y puesto).
+	local onResult = if checkpoint.final
+		then function(duoRecord: boolean, rank: number?)
+			for _, player in riders do
+				if player.Parent == Players then
+					remote:FireClient(player, "DuoResult", { time = runTime, duoRecord = duoRecord, rank = rank, personalBest = personalBest[player] == true })
+				end
+			end
+		end
+		else nil
+	DuoLeaderboard.submit(riders, checkpoint.index, runTime, onResult)
 end
 
 Lobby.start({ isBusy = isBusy, onDuoReady = startSession })

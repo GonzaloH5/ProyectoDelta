@@ -272,17 +272,17 @@ end
 
 function FlightTester.runAll(): string
 	local lines = {}
-	for index = 1, 10 do
-		local map = workspace:FindFirstChild("Map")
-		if map and map:FindFirstChild(string.format("Level%02d", index)) then
-			for _, routeName in { "Route", "RouteAlt" } do
-				if map[string.format("Level%02d", index)]:FindFirstChild(routeName) then
-					for _, pilot in { FlightTester.NOVICE, FlightTester.CALM, FlightTester.FULL } do
-						table.insert(lines, FlightTester.run(index, routeName, pilot))
-					end
+	local map = workspace:FindFirstChild("Map")
+	local index = 1
+	while map and map:FindFirstChild(string.format("Level%02d", index)) do
+		for _, routeName in { "Route", "RouteAlt" } do
+			if map[string.format("Level%02d", index)]:FindFirstChild(routeName) then
+				for _, pilot in { FlightTester.NOVICE, FlightTester.CALM, FlightTester.FULL } do
+					table.insert(lines, FlightTester.run(index, routeName, pilot))
 				end
 			end
 		end
+		index += 1
 	end
 	return table.concat(lines, "\n")
 end

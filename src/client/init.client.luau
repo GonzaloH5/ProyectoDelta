@@ -27,6 +27,8 @@ local gliderFolder = workspace:WaitForChild(Config.GliderFolderName)
 remote.OnClientEvent:Connect(function(kind: unknown, data: unknown)
 	if kind == "Checkpoint" and type(data) == "table" then
 		CheckpointBanner.show(data :: any)
+	elseif kind == "DuoResult" and type(data) == "table" then
+		CheckpointBanner.showResult(data :: any)
 	end
 end)
 

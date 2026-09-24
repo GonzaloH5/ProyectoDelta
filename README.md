@@ -21,7 +21,8 @@ El juego está en **inglés** (textos de interfaz, carteles, títulos de nivel y
   con el ancho de todo el valle) ambos ven la pantalla de checkpoint (`CheckpointBanner`): nivel superado, el siguiente,
   progreso en rombos, color del bioma y aviso de bioma nuevo. Desde ahí reaparecen tras chocar, a la altura de vuelo
   sobre la isla. El botón **RESET (R)** (pruebas) también vuelve al último checkpoint.
-- Meta: cruzarla muestra "COURSE COMPLETE!"; al aterrizar en la isla final el dúo vuelve al lobby.
+- Meta: cruzarla muestra "COURSE COMPLETE!" con el tiempo del recorrido y, en cuanto responde la clasificación,
+  "NEW DUO RECORD · #N ON THE BOARD" o "NEW PERSONAL BEST!"; al aterrizar en la isla final el dúo vuelve al lobby.
 - Los atributos `BiomeTitle` y `BiomeColor` de cada isla los escribe `MapBuilder`: tras cambiar biomas, regenerar el mapa.
 
 - `Workspace.AlaDelta` es la **plantilla**: marca dónde y con qué forma sale cada ala. Al empezar el juego se guarda en ServerStorage.
@@ -75,14 +76,34 @@ por nivel, y el último nivel de cada capítulo combina las ideas del capítulo.
 
 - Cada nivel es un **corredor guiado**: paredes laterales y suelo (mortales) + techo semitransparente (se roza, limita la altura).
 - El trazado se escribe como órdenes (`straight`, `arc`, `rise`, `width`, `height`, `mark`) y los obstáculos van dentro:
-  `ridge` (colina: subir), `lintel` (viga colgada: bajar), `promontory` (saliente de pared: apartarse), `guide` (anillo visual).
+  `ridge` (colina: subir), `lintel` (viga colgada: bajar), `promontory` (saliente de pared: apartarse),
+  `pillar` (pilar exento en rombo, del suelo al techo: rodearlo por el lado que marca el anillo), `guide` (anillo visual).
   Añadir un nivel = añadir una entrada a la tabla `LEVELS` de `MapBuilder.luau`.
-- Estructura: `StartIsland → Level01 → RestIsland01 → … → Level10 → FinishIsland`, más `DevSpawns`.
+- Estructura: `StartIsland → Level01 → RestIsland01 → … → Level50 → FinishIsland`, más `DevSpawns`.
   Entre corredores hay un valle abierto con la isla de descanso; cada corredor empieza en la boca de un acantilado.
 - Cada `LevelNN` tiene `Entry`, `Exit`, `EntryPortal`, `Corridor`, `Features`, `Guides` y `Route` (línea ideal).
 - Cada isla tiene `SpawnPoint` y `CheckpointZone` (marcadores listos para checkpoints futuros).
 - Colores del blockout: marrón = paredes/acantilados · verde oscuro = suelo · celeste translúcido = techo · rojo = obstáculo · amarillo = guía · blanco = entrada.
-- Probar un nivel suelto: atributo `DevStartLevel` (1-10) en `Workspace.Map`; las alas despegan en `DevSpawns.LevelNN`. `0` = recorrido normal.
+- Probar un nivel suelto: atributo `DevStartLevel` (1-50) en `Workspace.Map`; las alas despegan en `DevSpawns.LevelNN`. `0` = recorrido normal.
+- **Trazado en filas**: para que 50 niveles no se alejen del origen ni se crucen, los niveles 1-10 van hacia +X y cada
+  pareja 11-12, 21-22, 31-32 y 41-42 gira 90° + 90°: cinco filas alternas (+X / -X) separadas ~4.000 studs
+  (como mínimo ~2.000 entre paredes de filas vecinas). El resto de niveles acaba con el mismo rumbo con el que empieza.
+  Total: ~177.000 studs (~49 min a 60 studs/s sin choques), ~70.000 piezas; el punto más lejano está a ~40.000 del origen.
+
+### Los 50 niveles
+
+| Capítulo · bioma | Niveles | Idea de cada nivel (el último combina el capítulo) |
+|---|---|---|
+| 1 · Pradera | 1-5 | subir y bajar · izquierda y derecha · altura + giro · curvas seguidas · subida larga |
+| 2 · Cañón rojo | 6-10 | bajada larga · paso estrecho · slalom suave · correcciones rápidas · Final Test |
+| 3 · Bosque otoñal | 11-15 | giro largo de 90° · colinas seguidas (+90°) · túnel bajo · slalom rápido · Autumn Trial |
+| 4 · Mesetas del desierto | 16-20 | escalones de subida · bajada con vigas · zigzag subiendo y bajando · saliente antes de un paso estrecho · Mesa Run |
+| 5 · Glaciar | 21-25 | giro de 90° estrecho · grieta estrecha y alta (+90°) · carámbanos (vigas seguidas) · salientes dentro de las curvas · Glacier Trial |
+| 6 · Acantilados | 26-30 | picado y colina al salir · **pilares** (farallones) · colina + viga seguidas · horquillas de radio 180 · Cliff Trial |
+| 7 · Selva | 31-35 | giro de 90° con pilares · vigas en curva (+90°) · colina y saliente, viga y pilar · laberinto de pilares · Jungle Trial |
+| 8 · Volcán | 36-40 | tubo bajo y estrecho · subida larga con salientes · slalom de magma · espiral bajando · Volcano Trial |
+| 9 · Cristal | 41-45 | giro de 90° con pilares · sala de prismas (+90°) · olas con pilares · saliente-pilar cada 250 · Crystal Trial |
+| 10 · Cielo final | 46-50 | ascenso con vigas · surf (colina y viga cada ~260) · slalom en curvas · Heaven's Gauntlet · Final Flight |
 
 ### Vestido visual (biomas)
 
@@ -102,19 +123,35 @@ require(game.ServerScriptService.Glider.DevTools.MapDresser:Clone()).audit(works
 - Techo = capa de nubes: la losa (la colisión que se roza) brilla suave como base del mar de nubes, y cada
   ~150 studs de recorrido cuelga una nube grande low-poly (3 placas giradas en dos pisos, panza azulada). Obstáculos en roca de acento + línea Neon
   en el borde de ataque. Entrada con arco de piedra y cartel "NIVEL NN". Islas hexagonales con faro.
-- Biomas definidos: **Pradera** (niveles 1-5) y **Cañón rojo** (6-10: paredes terracota, arenisca crema en los
-  obstáculos, peligro en rosa Neon, cactus y agujas de roca en los valles). El valle que precede al primer nivel
-  de un capítulo ya usa el bioma nuevo (RestIsland05 es la isla de transición al Cañón rojo).
-- `DRESS_LEVELS` (en `MapBuilder.luau`) limita hasta qué nivel se viste (ahora: 10, todo el recorrido).
-- Helpers low-poly compartidos con el lobby: `LowPoly.luau`.
+- Los 10 biomas (cada uno con su color de acento en el HUD y en la pantalla de checkpoint):
+
+  | Bioma | Niveles | Paredes / suelo | Obstáculos · peligro | Plantas | Fondo de los valles |
+  |---|---|---|---|---|---|
+  | Pradera (Meadow) | 1-5 | roca arena / césped | naranja · rojo | árboles | cascada |
+  | Cañón rojo (Red Canyon) | 6-10 | terracota / arena ocre | arenisca crema · rosa | cactus y olivos | agujas de roca |
+  | Bosque otoñal (Autumn Forest) | 11-15 | gris cálido / hojarasca | abedul crema · azul | árboles naranja, rojo y oro, algún pino | cascada |
+  | Mesetas (Desert Mesas) | 16-20 | arenisca a franjas / arena pálida | óxido oscuro · turquesa | cactus | mesetas de cima plana |
+  | Glaciar (Glacier) | 21-25 | hielo / nieve | azul glaciar · naranja | pinos nevados | seracs |
+  | Acantilados (Sea Cliffs) | 26-30 | creta / mar | ocre · rojo | pinos y árboles | farallones con hierba |
+  | Selva (Jungle) | 31-35 | roca con musgo / suelo oscuro | piedra de templo · magenta | palmeras | cascada turquesa |
+  | Volcán (Volcano) | 36-40 | basalto / ceniza con grietas de lava | roca rojiza · azul | árboles calcinados con ascuas | cascada de lava |
+  | Cristal (Crystal Caverns) | 41-45 | violeta / manchas brillantes | cristal cian · rosa | racimos de cristal | cristales gigantes |
+  | Cielo final (Sky Kingdom) | 46-50 | mármol / nubes | oro · azul (anillos guía rosa) | cerezos | mar de nubes |
+
+  El valle que precede al primer nivel de un capítulo ya usa el bioma nuevo (RestIsland05 es la isla de transición
+  al Cañón rojo). Plantas y fondos de valle quedan fuera del volumen de vuelo (encima de los muros, bajo las islas).
+- `DRESS_LEVELS` (en `MapBuilder.luau`) limita hasta qué nivel se viste (ahora: 50, todo el recorrido).
+- Helpers low-poly compartidos con el lobby: `LowPoly.luau` (árbol, cactus, pino, palmera, cristales, árbol calcinado…).
+- Regenerar los 50 niveles en Studio tarda un rato (~70.000 piezas): lanzar `build()` y guardar el place al terminar.
 
 ## Estructura
 
 | Carpeta | En Studio | Contenido |
 |---|---|---|
 | `src/shared` | `ReplicatedStorage.Glider` | `GliderConfig` (todos los parámetros), `GliderMath`, `GliderRemote` |
-| `src/server` | `ServerScriptService.Glider` | `GliderController` (sesiones, lobby, checkpoints), `GliderSession` (un ala + su dúo + vuelo + reaparición), `Checkpoints` (islas de descanso y meta), `Lobby` (plataformas), `RiderRig` (colgar jugadores + IK), `CollisionGroups`, `PlayerStats` (récords guardados), `LevelStreaming`, `DevTools` (MapBuilder, MapDresser, Biomes, LobbyBuilder, LowPoly, FlightTester: solo edición) |
+| `src/server` | `ServerScriptService.Glider` | `GliderController` (sesiones, lobby, checkpoints), `GliderSession` (un ala + su dúo + vuelo + reaparición), `Checkpoints` (islas de descanso y meta), `Lobby` (plataformas), `RiderRig` (colgar jugadores + IK), `CollisionGroups`, `PlayerStats` (récords guardados), `DuoLeaderboard` (clasificación de dúos y tablón), `LevelStreaming`, `DevTools` (MapBuilder, MapDresser, Biomes, LobbyBuilder, LowPoly, FlightTester: solo edición) |
 | `src/client` | `StarterPlayerScripts.GliderClient` | `InputAxis` (teclado/mando/táctil), `FlightHud`, `GliderCamera`, `ResetButton`, `LobbyButton`, `CheckpointBanner`, `UiScale`, `OtherDuos` |
+| `tools/sim` | — (no se sincroniza) | Imitación de Roblox para probar el mapa y el FlightTester sin Studio (ver abajo) |
 
 ## Rendimiento: ventana de niveles cargados
 
@@ -143,6 +180,22 @@ siempre en la salida.
 - Para probarlo en Studio: *Game Settings → Security → Enable Studio Access to API Services* (el place tiene que
   estar publicado). Sin eso, el juego funciona igual y solo avisa de que no guarda.
 
+## Clasificación de dúos (tablón del lobby)
+
+`DuoLeaderboard` (servidor) guarda en un OrderedDataStore la mejor marca de cada **pareja** de jugadores (vuelos de
+dos desde la salida; las pruebas con `DevStartLevel` y los vuelos en solitario no cuentan):
+
+- Puntuación = el nivel más lejano superado y, a igualdad, el menor tiempo del cronómetro al cruzarlo
+  (`nivel × 10.000.000 − centésimas`). Mientras nadie termine el recorrido, manda hasta dónde llegó cada dúo; al
+  terminarlo, el mejor tiempo del recorrido completo (**FINISHED**).
+- Se envía en cada checkpoint (solo escribe si mejora). Clave `<UserId menor>_<UserId mayor>`: el mismo dúo cuenta
+  igual vuele en el orden que vuele. OrderedDataStore `DuoBest_v1`.
+- **Tablón "TOP DUOS"** con los 10 mejores (puesto, nombres, nivel, tiempo), se actualiza cada minuto y al momento
+  cuando un dúo de este servidor mejora. Por defecto se crea detrás a la izquierda de la plaza, mirando al
+  `SpawnLocation`. **Para colocarlo a mano:** pon en Workspace una `Part` llamada `DuoLeaderboard` donde quieras; la
+  tabla sale en su cara **Front** y se adapta a su tamaño (por ejemplo 22 × 14 studs).
+- En Studio necesita *Enable Studio Access to API Services*; sin eso el tablón sale vacío y lo indica.
+
 ## Controles e interfaz
 
 | Acción | Teclado | Mando | Móvil |
@@ -162,3 +215,24 @@ siempre en la salida.
 
 Studio → pestaña **Test** → *Clients and Servers* → N jugadores → **Start**. Cada pareja se sube a una plataforma.
 Para probar solo: `RequireBothPlayers = false` en `GliderConfig` (una persona sola en una plataforma ya despega).
+
+### Sin Studio (`tools/sim`)
+
+Una imitación mínima de Roblox (tipos, instancias y consultas físicas exactas para bloques, cuñas y bolas) ejecuta el
+código real de `src/` fuera de Studio. Necesita Python 3 y el ejecutable `luau`
+([releases de Luau](https://github.com/luau-lang/luau/releases)):
+
+```bash
+python3 tools/sim/run.py drivers/check.luau              # genera el mapa y pasa FlightTester.checkRules()
+python3 tools/sim/run.py drivers/check.luau fine=true    # márgenes finos (1, 2, 3… studs) para ver la holgura
+python3 tools/sim/run.py drivers/pilots.luau from=11     # los 3 pilotos en cada nivel (perfil de dificultad)
+python3 tools/sim/run.py drivers/audit.luau              # regla de oro (MapDresser.audit) en todos los niveles
+python3 tools/sim/run.py drivers/layout.luau             # trazado: extensión, separación entre filas y SVG
+python3 tools/sim/run.py drivers/leaderboard.luau        # DuoLeaderboard y PlayerStats con DataStores falsos
+python3 tools/sim/run.py drivers/selftest.luau           # pruebas de la propia imitación
+```
+
+Límites: el `Random` no es el de Roblox (el vestido aleatorio sale distinto que en Studio) y la plantilla `AlaDelta`
+no está en el repo, así que se usa un ala de 32 de envergadura y 4 de alto (`span=`, `wingTop=` para cambiarla). Los
+niveles 1-10, ajustados en Studio, también pasan la regla en la imitación (varios justo en el límite). Lo que decide
+es `checkRules()` en Studio.

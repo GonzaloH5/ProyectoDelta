@@ -40,6 +40,8 @@ local STYLE = {
 	Water = { neon = true, transparency = 0.35, visual = true },
 	Foam = { transparency = 0.3, visual = true },
 	Lamp = { neon = true },
+	CrystalTip = { neon = true },
+	Ember = { neon = true },
 }
 
 local function palette(biome)
@@ -68,17 +70,37 @@ local function palette(biome)
 		Foam = rgb(230, 248, 255),
 		Tower = rgb(248, 245, 238),
 		Stripe = biome.accent,
+		Crystal = biome.leaves[1],
+		CrystalTip = biome.blossoms[1],
+		Ember = biome.water,
 	}
 end
 
--- Planta grande del bioma: árbol (hojas o, con blossomChance, flor) o cactus, según biome.flora.
+-- Colores de los arbustos (bolas): los del bioma o, si no tiene, los de las hojas.
+local function bushColors(biome): { Color3 }
+	return biome.bushes or biome.leaves
+end
+
+-- Planta grande del bioma, según biome.flora: árbol (hojas o, con blossomChance, flor), cactus, pino,
+-- palmera, cristales o árbol calcinado.
 local function plant(ctx, parent, base: CFrame, scale: number, blossomChance: number)
 	local rng, biome = ctx.rng, ctx.biome
 	local flora = biome.flora or { "tree" }
 	local kind = if #flora > 1 then flora[rng:NextInteger(1, #flora)] else flora[1]
+	-- Ojo: árbol y cactus sacan del rng exactamente lo mismo que antes (el vestido de los biomas que ya
+	-- existían no cambia); los tipos nuevos sacan su color aquí.
 	if kind == "cactus" then
 		local bloom = if rng:NextNumber() < 0.35 then biome.blossoms[rng:NextInteger(1, #biome.blossoms)] else nil
 		return ctx.kit.cactus(parent, base, scale * 0.9, bloom)
+	elseif kind == "pine" then
+		return ctx.kit.pine(parent, base, scale, biome.leaves[rng:NextInteger(1, #biome.leaves)], biome.snow)
+	elseif kind == "palm" then
+		return ctx.kit.palm(parent, base, scale, biome.leaves[rng:NextInteger(1, #biome.leaves)])
+	elseif kind == "crystal" then
+		local color = biome.leaves[rng:NextInteger(1, #biome.leaves)]
+		return ctx.kit.crystal(parent, base, scale, color, biome.blossoms[rng:NextInteger(1, #biome.blossoms)])
+	elseif kind == "deadtree" then
+		return ctx.kit.deadTree(parent, base, scale, if rng:NextNumber() < 0.6 then biome.water else nil)
 	end
 	local color = if blossomChance > 0 and rng:NextNumber() < blossomChance
 		then biome.blossoms[rng:NextInteger(1, #biome.blossoms)]
@@ -206,7 +228,7 @@ local function corridorFloor(ctx, parent, part: BasePart)
 				local base = cf * CFrame.new(side * (inner - rng:NextNumber(4, WALL_STRIP - 10)), top, z) * CFrame.Angles(0, rng:NextNumber(0, 2 * math.pi), 0)
 				local prop = if rng:NextNumber() < 0.55
 					then ctx.kit.rock(parent, base, rng:NextNumber(6, 11))
-					else ctx.kit.bush(parent, base, rng:NextNumber(6, 10), ctx.biome.leaves)
+					else ctx.kit.bush(parent, base, rng:NextNumber(6, 10), bushColors(ctx.biome))
 				prop:SetAttribute("SkinLimit", WALL_STRIP) -- ocupan la franja: ≤ 20 hacia dentro, ≤ 12 de alto
 			end
 		end
@@ -241,7 +263,7 @@ local function valleyFloor(ctx, parent, part: BasePart)
 		ctx.kit.rock(parent, spot(), rng:NextNumber(12, 24))
 	end
 	for _ = 1, share(12) do
-		ctx.kit.bush(parent, spot(), rng:NextNumber(8, 14), ctx.biome.leaves)
+		ctx.kit.bush(parent, spot(), rng:NextNumber(8, 14), bushColors(ctx.biome))
 	end
 end
 
@@ -336,6 +358,14 @@ local function obstacle(ctx, parent, part: BasePart)
 				return
 			end
 			local apex = part.Position - frame.RightVector * side * ((size.X + 2 * out * PROMONTORY_GROW) / math.sqrt(2))
+			kit.part(parent, "HazardEdge", "Hazard", Vector3.new(1.5, y1 - y0, 1.5), CFrame.new(apex + Vector3.new(0, (y0 + y1) / 2, 0)) * frame.Rotation)
+		end)
+	elseif part.Name:find("^Pillar") then
+		-- Pilar: prisma girado 45° como el saliente (se engrosa igual: ≤ 3 studs en las aristas); la línea de
+		-- peligro va en la arista que mira al ala que llega (hacia atrás del recorrido).
+		local frame = part.CFrame * CFrame.Angles(0, -math.rad(45), 0)
+		obstacleBands(ctx, parent, part, PROMONTORY_GROW, PROMONTORY_GROW, function(y0, y1, out)
+			local apex = part.Position - frame.LookVector * ((size.X + 2 * out * PROMONTORY_GROW) / math.sqrt(2))
 			kit.part(parent, "HazardEdge", "Hazard", Vector3.new(1.5, y1 - y0, 1.5), CFrame.new(apex + Vector3.new(0, (y0 + y1) / 2, 0)) * frame.Rotation)
 		end)
 	end
@@ -437,32 +467,69 @@ local function waterfall(ctx, parent, wallPart: BasePart, side: number)
 	end
 end
 
--- Agujas de roca (hoodoos) en el fondo del valle: prismas apilados que se estrechan + losa de remate.
--- Lejos de la isla (avoid = centro de la isla): quedan muy por debajo de ella y del vuelo.
-local function hoodoos(ctx, parent, floorPart: BasePart, avoid: Vector3?)
+-- Formaciones del fondo del valle: prismas hexagonales apilados que se estrechan + losa de remate. Lejos de
+-- la isla (avoid = centro de la isla) y muy por debajo de ella y del vuelo. Cada estilo cambia cuántas hay
+-- por valle (~600 de largo), su radio, su alto, cuánto se estrechan y la distancia mínima a la isla.
+local FORMATIONS = {
+	hoodoos = { count = 7, radius = { 12, 18 }, height = { 50, 110 }, taper = 0.85, clearance = 160 }, -- agujas (cañón)
+	mesas = { count = 3, radius = { 30, 44 }, height = { 45, 85 }, taper = 0.97, clearance = 210 }, -- cima plana
+	spires = { count = 8, radius = { 10, 15 }, height = { 70, 130 }, taper = 0.72, clearance = 160 }, -- seracs de hielo
+	stacks = { count = 5, radius = { 16, 24 }, height = { 60, 120 }, taper = 0.92, clearance = 180, grassCap = true }, -- farallones
+}
+
+local function formations(ctx, parent, floorPart: BasePart, avoid: Vector3?, style)
 	local cf, size, rng, kit = floorPart.CFrame, floorPart.Size, ctx.rng, ctx.kit
 	local top = size.Y / 2
 	local ix, iz = size.X / 2 - ctx.wallT - 40, size.Z / 2 - 30
-	local placed, wanted = 0, math.max(1, math.floor(7 * size.Z / 600 + 0.5)) -- ~7 por valle
+	local placed, wanted = 0, math.max(1, math.floor(style.count * size.Z / 600 + 0.5))
 	for _ = 1, 40 do
 		if placed >= wanted then
 			break
 		end
 		local base = cf * CFrame.new(rng:NextNumber(-ix, ix), top, rng:NextNumber(-iz, iz)) * CFrame.Angles(0, rng:NextNumber(0, math.pi), 0)
-		if avoid and (Vector3.new(base.X, 0, base.Z) - Vector3.new(avoid.X, 0, avoid.Z)).Magnitude < 160 then
+		if avoid and (Vector3.new(base.X, 0, base.Z) - Vector3.new(avoid.X, 0, avoid.Z)).Magnitude < style.clearance then
 			continue
 		end
-		local radius, y = rng:NextNumber(12, 18), 0
-		local height = rng:NextNumber(50, 110)
+		local radius, y = rng:NextNumber(style.radius[1], style.radius[2]), 0
+		local height = rng:NextNumber(style.height[1], style.height[2])
 		local count = math.max(3, math.floor(height / 24))
 		for k = 1, count do
 			local h = height / count
 			kit.hex(parent, "Hoodoo", "Strata", radius, h, base * CFrame.new(0, y + h / 2, 0) * CFrame.Angles(0, rng:NextNumber(0, 1), 0), ctx.biome.rock[if k % 2 == 1 then 2 else 3])
 			y += h
-			radius *= 0.85
+			radius *= style.taper
 		end
-		kit.part(parent, "HoodooCap", "Facet", Vector3.new(radius * 2.8, 6, radius * 2.5), base * CFrame.new(0, y + 3, 0) * CFrame.Angles(rng:NextNumber(-0.15, 0.15), rng:NextNumber(0, math.pi), rng:NextNumber(-0.15, 0.15)))
+		kit.part(parent, "HoodooCap", if style.grassCap then "Cap" else "Facet", Vector3.new(radius * 2.8, 6, radius * 2.5), base * CFrame.new(0, y + 3, 0) * CFrame.Angles(rng:NextNumber(-0.15, 0.15), rng:NextNumber(0, math.pi), rng:NextNumber(-0.15, 0.15)))
 		placed += 1
+	end
+end
+
+-- Cristales gigantes en el fondo del valle (mismo reparto que las formaciones).
+local function crystalField(ctx, parent, floorPart: BasePart, avoid: Vector3?)
+	local cf, size, rng, biome = floorPart.CFrame, floorPart.Size, ctx.rng, ctx.biome
+	local top = size.Y / 2
+	local ix, iz = size.X / 2 - ctx.wallT - 40, size.Z / 2 - 30
+	local placed, wanted = 0, math.max(1, math.floor(6 * size.Z / 600 + 0.5))
+	for _ = 1, 40 do
+		if placed >= wanted then
+			break
+		end
+		local base = cf * CFrame.new(rng:NextNumber(-ix, ix), top, rng:NextNumber(-iz, iz)) * CFrame.Angles(0, rng:NextNumber(0, math.pi), 0)
+		if avoid and (Vector3.new(base.X, 0, base.Z) - Vector3.new(avoid.X, 0, avoid.Z)).Magnitude < 170 then
+			continue
+		end
+		ctx.kit.crystal(parent, base, rng:NextNumber(4, 7), biome.leaves[rng:NextInteger(1, #biome.leaves)], biome.blossoms[rng:NextInteger(1, #biome.blossoms)])
+		placed += 1
+	end
+end
+
+-- Mar de nubes: nubes bajas (solo visuales) flotando en el valle, por debajo de la isla y del vuelo.
+local function cloudSea(ctx, parent, floorPart: BasePart)
+	local cf, size, rng = floorPart.CFrame, floorPart.Size, ctx.rng
+	local top = size.Y / 2
+	local ix, iz = size.X / 2 - ctx.wallT - 30, size.Z / 2 - 20
+	for _ = 1, math.max(1, math.floor(10 * size.Z / 600 + 0.5)) do
+		ctx.kit.cloud(parent, cf * CFrame.new(rng:NextNumber(-ix, ix), top + rng:NextNumber(20, 120), rng:NextNumber(-iz, iz)), rng:NextNumber(1.6, 2.6))
 	end
 end
 
@@ -532,7 +599,7 @@ local function island(ctx, parent, model: Instance)
 	for _ = 1, 6 do
 		local base = spot(4)
 		if base then
-			kit.bush(parent, base, rng:NextNumber(4, 8), biome.leaves)
+			kit.bush(parent, base, rng:NextNumber(4, 8), bushColors(biome))
 		end
 	end
 	for _ = 1, 4 do
@@ -624,10 +691,19 @@ function MapDresser.dress(model: Instance, biome, options): number
 				break
 			end
 		end
-	elseif biome.valleyFeature == "hoodoos" then
+	elseif FORMATIONS[biome.valleyFeature] or biome.valleyFeature == "crystals" then
 		local spawnPoint = model:FindFirstChild("SpawnPoint")
+		local avoid = spawnPoint and spawnPoint.Position
 		for _, floorPart in valleyFloors do
-			hoodoos(ctx, folder("Valley"), floorPart, spawnPoint and spawnPoint.Position)
+			if biome.valleyFeature == "crystals" then
+				crystalField(ctx, folder("Valley"), floorPart, avoid)
+			else
+				formations(ctx, folder("Valley"), floorPart, avoid, FORMATIONS[biome.valleyFeature])
+			end
+		end
+	elseif biome.valleyFeature == "clouds" then
+		for _, floorPart in valleyFloors do
+			cloudSea(ctx, folder("Valley"), floorPart)
 		end
 	end
 	model:SetAttribute("Biome", biome.name)

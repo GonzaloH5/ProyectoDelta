@@ -8,8 +8,9 @@
 -- colors[kind] = Color3 · style[kind] = { neon, transparency, noShadow, visual } (visual = sin colisión ni consultas).
 -- "base" es un CFrame apoyado en el suelo (su +Y = arriba). El rng se recibe de fuera para que cada
 -- constructor conserve su semilla: el mismo rng y el mismo orden de llamadas dan siempre el mismo resultado.
--- Tipos (kind) que usan las piezas compuestas: Trunk, Leaf (árbol) · Cactus · Rock, RockDark (roca, isla) · Grass (isla)
--- · Bush · Flower · WoodDark, Lamp (farolillo) · Cloud (nube).
+-- Tipos (kind) que usan las piezas compuestas: Trunk, Leaf (árbol, pino, palmera) · Cactus · Crystal, CrystalTip
+-- (cristales) · Ember (ascuas del árbol calcinado) · Rock, RockDark (roca, isla) · Grass (isla) · Bush · Flower
+-- · WoodDark, Lamp (farolillo) · Cloud (nube).
 
 local LowPoly = {}
 
@@ -133,6 +134,86 @@ function LowPoly.kit(options)
 		end
 		if bloom then
 			kit.gem(model, "Bloom", "Leaf", 1.6 * scale, base * CFrame.new(0, height + 1.4 * scale, 0), bloom)
+		end
+		model.Parent = parent
+		return model
+	end
+
+	-- Pino: tronco + 3 pisos cuadrados que se estrechan, girados 45° entre sí (estrella vista desde arriba).
+	-- Alto ≈ 20 × scale. snow = color de la nieve sobre cada piso y en la punta (opcional).
+	function kit.pine(parent: Instance, base: CFrame, scale: number, color: Color3, snow: Color3?): Model
+		local model = Instance.new("Model")
+		model.Name = "Pine"
+		local trunk = 5 * scale
+		kit.part(model, "Trunk", "Trunk", Vector3.new(2.2, trunk, 2.2) * Vector3.new(scale, 1, scale), base * CFrame.new(0, trunk / 2, 0))
+		local y = trunk - scale
+		for tier, spec in { { 7, 6 }, { 5.2, 5.5 }, { 3.4, 5 } } do
+			local half, height = spec[1] * scale, spec[2] * scale
+			local cf = base * CFrame.new(0, y + height / 2, 0) * CFrame.Angles(0, math.rad(45 * tier), 0)
+			LowPoly.tint(kit.part(model, "Tier", "Leaf", Vector3.new(2 * half, height, 2 * half), cf), color:Lerp(Color3.new(0, 0, 0), 0.07 * (tier - 1)))
+			if snow then
+				LowPoly.tint(kit.part(model, "Snow", "Leaf", Vector3.new(1.5 * half, 0.8 * scale, 1.5 * half), cf * CFrame.new(0, height / 2 + 0.4 * scale, 0)), snow)
+			end
+			y += height * 0.72
+		end
+		kit.gem(model, "Tip", "Leaf", 2.2 * scale, base * CFrame.new(0, y + 1.5 * scale, 0), snow or color)
+		model.Parent = parent
+		return model
+	end
+
+	-- Palmera: tronco curvo de 4 tramos, 5 hojas caídas y 2 cocos. Alto ≈ 18 × scale.
+	function kit.palm(parent: Instance, base: CFrame, scale: number, color: Color3): Model
+		local model = Instance.new("Model")
+		model.Name = "Palm"
+		local lean = rng:NextNumber(0.08, 0.16)
+		local cf = base
+		for k = 1, 4 do
+			local height = 4.2 * scale
+			local width = (2 - 0.2 * k) * scale
+			cf = cf * CFrame.Angles(0, 0, lean) -- cada tramo se inclina un poco más
+			kit.part(model, "Trunk", "Trunk", Vector3.new(width, height, width), cf * CFrame.new(0, height / 2, 0) * CFrame.Angles(0, math.rad(45 * k), 0))
+			cf = cf * CFrame.new(0, height * 0.92, 0)
+		end
+		local crown = cf * CFrame.new(0, 0.6 * scale, 0)
+		for k = 0, 4 do
+			local frond = crown * CFrame.Angles(0, math.rad(72 * k + rng:NextNumber(-10, 10)), 0) * CFrame.Angles(math.rad(-28), 0, 0)
+			LowPoly.tint(kit.part(model, "Frond", "Leaf", Vector3.new(3 * scale, 0.5 * scale, 11 * scale), frond * CFrame.new(0, 0, -5.2 * scale)), color:Lerp(Color3.new(0, 0, 0), 0.05 * (k % 2)))
+		end
+		for _, x in { -0.8, 0.8 } do
+			kit.part(model, "Coconut", "Trunk", Vector3.one * 1.3 * scale, crown * CFrame.new(x * scale, -0.8 * scale, 0.5 * scale), Enum.PartType.Ball)
+		end
+		model.Parent = parent
+		return model
+	end
+
+	-- Racimo de cristales: 3-4 prismas alargados e inclinados con punta brillante. Alto ≈ 10 × scale.
+	function kit.crystal(parent: Instance, base: CFrame, scale: number, color: Color3, tip: Color3?): Model
+		local model = Instance.new("Model")
+		model.Name = "Crystal"
+		for k = 1, rng:NextInteger(3, 4) do
+			local height = rng:NextNumber(5, 10) * scale * (if k == 1 then 1.2 else 1)
+			local width = rng:NextNumber(1.4, 2.2) * scale
+			local tilt = CFrame.Angles(rng:NextNumber(-0.35, 0.35), rng:NextNumber(0, math.pi), rng:NextNumber(-0.35, 0.35))
+			local root = base * CFrame.new(rng:NextNumber(-1.5, 1.5) * scale, 0, rng:NextNumber(-1.5, 1.5) * scale) * tilt
+			LowPoly.tint(kit.part(model, "Shard", "Crystal", Vector3.new(width, height, width), root * CFrame.new(0, height / 2, 0) * CFrame.Angles(0, math.rad(45), 0)), color:Lerp(Color3.new(1, 1, 1), rng:NextNumber(0, 0.25)))
+			kit.gem(model, "Tip", "CrystalTip", width * 1.1, root * CFrame.new(0, height, 0), tip or color)
+		end
+		model.Parent = parent
+		return model
+	end
+
+	-- Árbol calcinado: tronco en dos tramos y 3 ramas desnudas; ascuas en algunas puntas. Alto ≈ 16 × scale.
+	function kit.deadTree(parent: Instance, base: CFrame, scale: number, ember: Color3?): Model
+		local model = Instance.new("Model")
+		model.Name = "DeadTree"
+		kit.part(model, "Trunk", "Trunk", Vector3.new(2.2, 7, 2.2) * scale, base * CFrame.new(0, 3.5 * scale, 0) * CFrame.Angles(0, math.rad(45), 0))
+		kit.part(model, "Trunk", "Trunk", Vector3.new(1.5, 6, 1.5) * scale, base * CFrame.new(0.3 * scale, 9.6 * scale, 0) * CFrame.Angles(0, 0, -0.1))
+		for k = 1, 3 do
+			local branch = base * CFrame.new(0, (6 + 2.5 * k) * scale, 0) * CFrame.Angles(0, math.rad(120 * k + rng:NextNumber(-20, 20)), 0) * CFrame.Angles(0, 0, math.rad(55))
+			kit.part(model, "Branch", "Trunk", Vector3.new(0.8, 5, 0.8) * scale, branch * CFrame.new(0, 2.5 * scale, 0))
+			if ember and rng:NextNumber() < 0.5 then
+				kit.gem(model, "Ember", "Ember", 1.1 * scale, branch * CFrame.new(0, 5 * scale, 0), ember)
+			end
 		end
 		model.Parent = parent
 		return model

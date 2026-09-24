@@ -3,6 +3,7 @@
 --   · banda inclinada del color del bioma que entra deslizando desde la izquierda
 --   · "CHECKPOINT" con golpe de escala · nivel superado y el siguiente
 --   · fila de rombos de progreso (el recién superado "salta") · aviso de bioma nuevo
+--   · en la meta: tiempo del recorrido y, poco después (showResult), récord del dúo / puesto / récord personal
 -- El servidor manda los datos (Checkpoints.info); aquí solo se dibuja.
 
 local Players = game:GetService("Players")
@@ -12,9 +13,10 @@ local UiScale = require(script.Parent:WaitForChild("UiScale"))
 
 local CheckpointBanner = {}
 
-local HOLD_TIME, FINAL_HOLD_TIME = 1.7, 3.5
+local HOLD_TIME, FINAL_HOLD_TIME = 1.7, 4.5
 local MAX_DIAMONDS = 20 -- con más niveles, el progreso se muestra como texto
 local DEFAULT_COLOR = Color3.fromRGB(255, 110, 95)
+local RECORD_COLOR = Color3.fromRGB(255, 205, 50)
 local BAND_Y = UDim.new(0.5, -12)
 
 local function tween(instance: Instance, seconds: number, goal: { [string]: any }, style: Enum.EasingStyle?, direction: Enum.EasingDirection?)
@@ -157,6 +159,8 @@ pillStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 pillStroke.Color = Color3.new(1, 1, 1)
 pillStroke.Thickness = 2
 pillStroke.Parent = pill
+local pillScale = Instance.new("UIScale")
+pillScale.Parent = pill
 local pillText = Instance.new("TextLabel")
 pillText.Size = UDim2.fromScale(0, 1)
 pillText.AutomaticSize = Enum.AutomaticSize.X
@@ -214,6 +218,12 @@ local function buildDiamonds(index: number, total: number, color: Color3): Frame
 end
 
 local token = 0
+local finalToken = -1 -- token de la pantalla de meta visible (para showResult)
+
+local function formatTime(seconds: number): string
+	local minutes = math.floor(seconds / 60)
+	return string.format("%d:%05.2f", minutes, seconds - minutes * 60)
+end
 
 -- data = Checkpoints.info del servidor: index, total, title, nextTitle, final, color, newBiome.
 function CheckpointBanner.show(data: { [string]: any })
@@ -223,13 +233,16 @@ function CheckpointBanner.show(data: { [string]: any })
 	local total = if type(data.total) == "number" then data.total else index
 	local color = if typeof(data.color) == "Color3" then data.color else DEFAULT_COLOR
 	local final = data.final == true
+	local time = if type(data.time) == "number" then data.time else nil
+	finalToken = if final then mine else -1
 
 	band.BackgroundColor3 = color
 	title.Text = if final then "COURSE COMPLETE!" else "CHECKPOINT"
 	title.TextSize = if final then 54 else 64
 	titleStroke.Color = color:Lerp(Color3.new(0, 0, 0), 0.55)
-	subtitle.Text = if final
-		then string.format("%d / %d LEVELS  ·  Great flying, duo!", total, total)
+	subtitle.Text = if final and time
+		then string.format("%d / %d LEVELS  ·  TIME %s", total, total, formatTime(time))
+		elseif final then string.format("%d / %d LEVELS  ·  Great flying, duo!", total, total)
 		else string.format("LEVEL %02d CLEARED  ·  %s", index, tostring(data.title or ""))
 	nextLine.Text = if final
 		then "Land on the island to return to the lobby"
@@ -237,6 +250,7 @@ function CheckpointBanner.show(data: { [string]: any })
 	local newBiome = data.newBiome
 	pill.Visible = type(newBiome) == "string"
 	pill.BackgroundColor3 = color:Lerp(Color3.new(0, 0, 0), 0.25)
+	pillScale.Scale = 1
 	pillText.Text = if type(newBiome) == "string" then "NEW BIOME  ·  " .. upper(newBiome) else ""
 	local newest = buildDiamonds(index, total, color)
 
@@ -299,6 +313,32 @@ function CheckpointBanner.show(data: { [string]: any })
 			end
 		end)
 	end)
+end
+
+-- Resultado de la meta (llega poco después de la pantalla, cuando responde el almacén de la clasificación):
+-- data.duoRecord (nueva mejor marca del dúo), data.rank (puesto en el tablón), data.personalBest.
+-- Si la pantalla de meta ya se fue, no se muestra (el tablón del lobby lo refleja igual).
+function CheckpointBanner.showResult(data: { [string]: any })
+	if finalToken ~= token or not gui.Enabled then
+		return
+	end
+	local rank = if type(data.rank) == "number" then data.rank else nil
+	local text: string? = nil
+	if data.duoRecord == true then
+		text = if rank then string.format("NEW DUO RECORD  ·  #%d ON THE BOARD", rank) else "NEW DUO RECORD!"
+	elseif data.personalBest == true then
+		text = "NEW PERSONAL BEST!"
+	elseif rank then
+		text = string.format("#%d ON THE DUO BOARD", rank)
+	end
+	if not text then
+		return
+	end
+	pill.Visible = true
+	pill.BackgroundColor3 = RECORD_COLOR:Lerp(Color3.new(0, 0, 0), 0.3)
+	pillText.Text = text
+	pillScale.Scale = 1.5
+	tween(pillScale, 0.45, { Scale = 1 }, Enum.EasingStyle.Back)
 end
 
 return CheckpointBanner
