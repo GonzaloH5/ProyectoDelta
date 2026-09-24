@@ -14,13 +14,29 @@ export type Checkpoint = {
 	info: { [string]: any }, -- lo que ve el cliente en la pantalla de checkpoint
 }
 
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local GliderPhysics = require(ReplicatedStorage:WaitForChild("Glider"):WaitForChild("GliderPhysics"))
+
 local Checkpoints = {}
 Checkpoints.__index = Checkpoints
 
 local LEVELS_PER_CHAPTER = 5 -- MapBuilder: 10 capítulos de 5 niveles, un bioma cada uno
 
 -- Por nivel: línea ideal (Entry → Route → Exit) con distancias acumuladas, título y color del bioma (HUD).
-type LevelInfo = { points: { Vector3 }, lengths: { number }, total: number, title: string, color: Color3?, biome: string? }
+export type Ring = { plane: CFrame, half: Vector3 }
+export type Feather = { id: number, position: Vector3, part: BasePart }
+type LevelInfo = {
+	points: { Vector3 },
+	lengths: { number },
+	total: number,
+	title: string,
+	color: Color3?,
+	biome: string?,
+	wind: { GliderPhysics.WindZone },
+	rings: { Ring },
+	feathers: { Feather },
+}
 
 export type Course = typeof(setmetatable(
 	{} :: {
@@ -92,7 +108,24 @@ function Checkpoints.new(map: Instance?): Course
 		end
 		local _, color = biomeOf(level)
 		local biome = level:GetAttribute("Biome")
-		levels[index] = { points = points, lengths = lengths, total = total, title = levelTitle(map, index), color = color, biome = if type(biome) == "string" then biome else nil }
+		levels[index] = { points = points, lengths = lengths, total = total, title = levelTitle(map, index), color = color, biome = if type(biome) == "string" then biome else nil, wind = GliderPhysics.windZones(level), rings = {}, feathers = {} }
+		local ringFolder = level:FindFirstChild("Rings")
+		if ringFolder then
+			for _, plane in ringFolder:GetChildren() do
+				if plane:IsA("BasePart") then
+					table.insert(levels[index].rings, { plane = plane.CFrame, half = plane.Size / 2 })
+				end
+			end
+		end
+		local featherFolder = level:FindFirstChild("Feathers")
+		if featherFolder then
+			for _, gem in featherFolder:GetChildren() do
+				local id = gem:GetAttribute("FeatherId")
+				if gem:IsA("BasePart") and type(id) == "number" then
+					table.insert(levels[index].feathers, { id = id, position = gem.Position, part = gem })
+				end
+			end
+		end
 	end
 
 	local previousBiome = biomeOf(map:FindFirstChild("StartIsland"))
@@ -147,6 +180,43 @@ function Checkpoints.levelInfo(self: Course, index: number): (string, Color3?)
 		return "", nil
 	end
 	return info.title, info.color
+end
+
+-- Cruce de un plano (-Z local = hacia adelante) entre from y to, dentro de su rectángulo.
+local function crossesPlane(plane: CFrame, half: Vector3, from: Vector3, to: Vector3): boolean
+	local a = plane:PointToObjectSpace(from)
+	local b = plane:PointToObjectSpace(to)
+	if a.Z > 0 and b.Z <= 0 then
+		local hit = a:Lerp(b, a.Z / (a.Z - b.Z))
+		return math.abs(hit.X) <= half.X and math.abs(hit.Y) <= half.Y
+	end
+	return false
+end
+
+-- Anillos de impulso del nivel `index` cruzados entre from y to (índices en la lista del nivel).
+function Checkpoints.ringsCrossed(self: Course, index: number, from: Vector3, to: Vector3): { number }
+	local crossed = {}
+	local info = self.levels[index]
+	if info then
+		for i, ring in info.rings do
+			if crossesPlane(ring.plane, ring.half, from, to) then
+				table.insert(crossed, i)
+			end
+		end
+	end
+	return crossed
+end
+
+-- Plumas del nivel `index` (id, posición y pieza).
+function Checkpoints.feathersOf(self: Course, index: number): { Feather }
+	local info = self.levels[index]
+	return if info then info.feathers else {}
+end
+
+-- Corriente del mapa en `position` (zonas del nivel `index`; Vector3.zero fuera de ellas).
+function Checkpoints.windAt(self: Course, index: number, position: Vector3): Vector3
+	local info = self.levels[index]
+	return if info then GliderPhysics.windAt(info.wind, position) else Vector3.zero
 end
 
 -- Bioma del nivel (atributo Biome del modelo: la iluminación del cliente cambia con él).

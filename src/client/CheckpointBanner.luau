@@ -296,6 +296,10 @@ function CheckpointBanner.show(data: { [string]: any })
 		elseif final
 		then "Land on the island to return to the lobby"
 		else string.format("NEXT  »  LEVEL %02d  ·  %s", index + 1, tostring(data.nextTitle or ""))
+	if type(data.featherTotal) == "number" and not final then
+		local got = if type(data.feathers) == "number" then data.feathers else 0
+		subtitle.Text ..= string.format("  ·  ✦ %d/%d%s", got, data.featherTotal, if got >= data.featherTotal then " ★" else "")
+	end
 	if chapter and type(data.chapterTitle) == "string" then
 		subtitle.Text = string.format("%s COMPLETE  ·  LEVEL %02d CLEARED", upper(data.chapterTitle), index)
 	end

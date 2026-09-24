@@ -172,6 +172,7 @@ function FlightTester.run(levelIndex: number, routeName: string?, pilot, root: I
 	local safe = { pos = pos, yaw = state.yaw, segment = 1 }
 	local clean, sinceSafe = 0, 0
 	local strength = assistStrength(levelIndex, tutorial)
+	local windZones = GliderPhysics.windZones(level)
 	local energy, pumping = 1, false
 	local function where(): string
 		return string.format("%.0f de la entrada", (flat(pos - level.Entry.Position)).Magnitude)
@@ -248,7 +249,7 @@ function FlightTester.run(levelIndex: number, routeName: string?, pilot, root: I
 				end
 				state.boost = if pumping then Config.PumpBoostBoth else 0
 			end
-			local flown = GliderPhysics.fly(state, health, liftInput, balanceInput, pos, dims, DT, params, { now = t, assistTurn = assistTurn })
+			local flown = GliderPhysics.fly(state, health, liftInput, balanceInput, pos, dims, DT, params, { now = t, assistTurn = assistTurn, wind = GliderPhysics.windAt(windZones, pos) })
 			if flown.event == "impact" or flown.event == "crash" then
 				hits += 1
 			end
@@ -284,7 +285,11 @@ function FlightTester.run(levelIndex: number, routeName: string?, pilot, root: I
 			-- ── Mismo vuelo que GliderSession._fly (GliderPhysics.step, sin viento ni asistencia) ──
 			local maxVertical = GliderPhysics.ceilingLimit(state, pos, dims, params)
 			GliderPhysics.step(state, liftInput, balanceInput, DT, maxVertical, -math.huge, 0)
-			velocity = GliderPhysics.velocity(state)
+			local wind = GliderPhysics.windAt(windZones, pos)
+			velocity = GliderPhysics.velocity(state) + wind
+			if velocity.Y > maxVertical then
+				velocity = Vector3.new(velocity.X, maxVertical, velocity.Z) -- el techo también frena la corriente
+			end
 
 			-- ── Detección ESTRICTA: ala entera, cualquier contacto o el suelo = choque ──
 			local crashed = pos.Y < Config.KillHeight

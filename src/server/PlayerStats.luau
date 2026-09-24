@@ -6,6 +6,7 @@
 --   · TutorialDone  ya hizo (o saltó) el tutorial: no vuelve a empezar solo al entrar
 --   · Medals        mejor medalla de cada nivel: { ["12"] = 3 } (3 oro = sin golpes, 2 plata = sin perder el
 --                   ala, 1 bronce = superado)
+--   · Feathers      mejor número de plumas recogidas en cada nivel: { ["12"] = 5 }
 --   · Settings      ajustes del jugador (volumen, cámara, HUD): el último cambio gana
 -- NO se guarda por dónde iba: cada vuelo empieza siempre en la salida.
 --
@@ -34,6 +35,7 @@ export type Stats = {
 	Crashes: number,
 	TutorialDone: boolean,
 	Medals: { [string]: number },
+	Feathers: { [string]: number },
 	Settings: { [string]: any },
 }
 
@@ -59,7 +61,7 @@ local function emptyPending(): Pending
 end
 
 local function emptyStats(): Stats
-	return { HighestLevel = 0, BestTime = nil, Completions = 0, Runs = 0, Crashes = 0, TutorialDone = false, Medals = {}, Settings = {} }
+	return { HighestLevel = 0, BestTime = nil, Completions = 0, Runs = 0, Crashes = 0, TutorialDone = false, Medals = {}, Feathers = {}, Settings = {} }
 end
 
 -- Un ajuste válido (clave conocida, tipo del valor por defecto y dentro de su rango) o nil.
@@ -106,6 +108,14 @@ local function sanitize(raw: unknown): Stats
 		for key, medal in medals :: { [unknown]: unknown } do
 			if type(key) == "string" and tonumber(key) and type(medal) == "number" and medal >= 1 and medal <= 3 then
 				stats.Medals[key] = math.floor(medal)
+			end
+		end
+	end
+	local feathers = data.Feathers
+	if type(feathers) == "table" then
+		for key, count in feathers :: { [unknown]: unknown } do
+			if type(key) == "string" and tonumber(key) and type(count) == "number" and count >= 0 and count < 1000 then
+				stats.Feathers[key] = math.floor(count)
 			end
 		end
 	end
@@ -209,6 +219,7 @@ local function load(player: Player, entry: Entry)
 			stats.Crashes = saved.Crashes + pending.Crashes
 			stats.TutorialDone = stats.TutorialDone or saved.TutorialDone
 			mergeMedals(stats.Medals, saved.Medals)
+			mergeMedals(stats.Feathers, saved.Feathers)
 			if not entry.settingsChanged then
 				stats.Settings = saved.Settings
 			end
@@ -234,6 +245,7 @@ local function save(player: Player, entry: Entry)
 	local bestTime = entry.stats.BestTime
 	local tutorialDone = entry.stats.TutorialDone
 	local medals = table.clone(entry.stats.Medals)
+	local feathers = table.clone(entry.stats.Feathers)
 	local settings = if entry.settingsChanged then table.clone(entry.stats.Settings) else nil
 	entry.pending = emptyPending()
 	entry.dirty = false
@@ -251,6 +263,7 @@ local function save(player: Player, entry: Entry)
 			saved.Crashes += pending.Crashes
 			saved.TutorialDone = saved.TutorialDone or tutorialDone
 			mergeMedals(saved.Medals, medals)
+			mergeMedals(saved.Feathers, feathers)
 			if settings then
 				saved.Settings = settings
 			end
@@ -335,6 +348,18 @@ function PlayerStats.medalEarned(player: Player, level: number, medal: number): 
 		return false
 	end
 	entry.stats.Medals[key] = medal
+	entry.dirty = true
+	return true
+end
+
+-- Plumas recogidas en un nivel en un vuelo. Guarda el mejor número por nivel; true si mejora.
+function PlayerStats.feathersEarned(player: Player, level: number, count: number): boolean
+	local entry = entries[player]
+	local key = tostring(level)
+	if not entry or count <= (entry.stats.Feathers[key] or 0) then
+		return false
+	end
+	entry.stats.Feathers[key] = count
 	entry.dirty = true
 	return true
 end

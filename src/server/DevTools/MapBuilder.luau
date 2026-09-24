@@ -54,6 +54,8 @@ local COLORS = {
 	Guide = Color3.fromRGB(255, 205, 40), -- anillos guía (visuales)
 	Portal = Color3.fromRGB(235, 240, 255), -- boca de entrada de cada nivel (visual)
 	Chevron = Color3.fromRGB(255, 255, 255), -- flechas que anuncian la maniobra antes de cada obstáculo (visual)
+	BoostRing = Color3.fromRGB(90, 210, 255), -- anillos de impulso (visual: dan energía al cruzarlos)
+	Feather = Color3.fromRGB(255, 225, 90), -- plumas recolectables (visual)
 	ExitGlow = Color3.fromRGB(255, 225, 150), -- marco luminoso de la salida del corredor (visual)
 	Grass = Color3.fromRGB(95, 165, 80),
 	Rock = Color3.fromRGB(115, 100, 88),
@@ -65,6 +67,8 @@ local STYLE = {
 	Guide = { neon = true, visual = true },
 	Portal = { neon = true, visual = true },
 	Chevron = { neon = true, visual = true, transparency = 0.1 },
+	BoostRing = { neon = true, visual = true },
+	Feather = { neon = true, visual = true },
 	ExitGlow = { neon = true, visual = true, transparency = 0.2 },
 	Finish = { neon = true, visual = true },
 	Beacon = { neon = true },
@@ -440,6 +444,62 @@ local function makeContext(level: Model, frames, marks)
 		local lane = (edge + wall) / 2
 		ctx.point(s, lane, 0)
 		ctx.guide(s, lane, 0, math.clamp(math.abs(wall - edge) - 24, 40, 100), 85)
+	end
+
+	-- CORRIENTES: zonas de viento (marcadores invisibles en LevelNN.Wind con atributo WindVelocity). El servidor
+	-- y el FlightTester las leen con GliderPhysics.windZones; MapDresser las hace visibles (partículas y velo).
+	-- Van en tramos rectos (la caja sigue el rumbo del centro del tramo).
+	local windFolder: Folder? = nil
+	local function windZone(kind: string, s0: number, length: number, velocity: Vector3, widthFactor: number?)
+		windFolder = windFolder or newFolder(level, "Wind")
+		local f = at(s0 + length / 2)
+		local size = Vector3.new(f.width * (widthFactor or 1), f.height, length)
+		local zone = marker(windFolder :: Folder, nextName(kind), frameCFrame(f), size)
+		zone:SetAttribute("WindVelocity", velocity)
+		zone:SetAttribute("WindKind", kind)
+		return zone, f
+	end
+
+	-- CORRIENTE ASCENDENTE: sube `strength` studs/s mientras se está dentro (s0 … s0+length). Con ella se pasan
+	-- lomas más altas y empinadas de lo que el ala sube sola (ridge con upSlope > 23°).
+	function ctx.updraft(s0, length, strength)
+		windZone("Updraft", s0, length, Vector3.new(0, strength, 0))
+	end
+
+	-- CORRIENTE DESCENDENTE: hunde `strength` studs/s (p. ej. antes de una loma: hay que subir antes o impulsarse).
+	function ctx.downdraft(s0, length, strength)
+		windZone("Downdraft", s0, length, Vector3.new(0, -strength, 0))
+	end
+
+	-- VIENTO LATERAL: empuja hacia `side` (-1 izquierda, +1 derecha) `strength` studs/s: hay que inclinarse contra él.
+	function ctx.crosswind(s0, length, side, strength)
+		local f = at(s0 + length / 2)
+		windZone("Crosswind", s0, length, rightOf(f.heading) * side * strength)
+	end
+
+	-- ANILLO DE IMPULSO en (s, u, v): cruzarlo da energía y un empujón. Aro azul de size × size (visual) y un
+	-- marcador de plano en LevelNN.Rings (lo lee Checkpoints). Se ponen en líneas algo más arriesgadas.
+	local ringsFolder: Folder? = nil
+	function ctx.boostRing(s, u, v, size)
+		size = size or 46
+		ringsFolder = ringsFolder or newFolder(level, "Rings")
+		local cf = frameCFrame(at(s)) * CFrame.new(u, v, 0)
+		ring(guides, nextName("BoostRing"), "BoostRing", cf, size, size, 3, 3)
+		marker(ringsFolder :: Folder, nextName("RingPlane"), cf, Vector3.new(size + 6, size + 6, 4))
+	end
+
+	-- PLUMAS: n gemas recolectables de s0 a s1, de (u0, v0) a (u1, v1) (se recogen pasando a ≤ 12 studs).
+	local feathersFolder: Folder? = nil
+	local featherCount = 0
+	function ctx.feathers(s0, s1, n, u0, v0, u1, v1)
+		feathersFolder = feathersFolder or newFolder(level, "Feathers")
+		for i = 1, n do
+			local k = if n == 1 then 0.5 else (i - 1) / (n - 1)
+			local cf = frameCFrame(at(s0 + (s1 - s0) * k)) * CFrame.new(u0 + ((u1 or u0) - u0) * k, v0 + ((v1 or v0) - v0) * k, 0)
+			featherCount += 1
+			local gem = newPart(feathersFolder :: Folder, "Feather", "Feather", Vector3.new(4, 4, 4), cf * CFrame.Angles(math.rad(45), 0, math.rad(45)))
+			gem:SetAttribute("FeatherId", featherCount)
+		end
 	end
 
 	-- AVISOS: antes de cada obstáculo, dos flechas (chevrones) que apuntan hacia donde hay que ir (arriba,

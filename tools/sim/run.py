@@ -77,8 +77,8 @@ def build(driver, args):
     with open(os.path.join(HERE, "physics.luau"), encoding="utf-8") as f:
         parts.append(f.read())
     parts.append(
-        "local typeof, Vector3, CFrame, Color3, UDim, UDim2, Vector2, ColorSequence, NumberSequence, Enum, Random, Instance, RaycastParams, OverlapParams, game, workspace, task, warn =\n"
-        "\tRoblox.typeof, Roblox.Vector3, Roblox.CFrame, Roblox.Color3, Roblox.UDim, Roblox.UDim2, Roblox.Vector2, Roblox.ColorSequence, Roblox.NumberSequence, Roblox.Enum, Roblox.Random, Roblox.Instance,\n"
+        "local typeof, Vector3, CFrame, Color3, UDim, UDim2, Vector2, ColorSequence, NumberSequence, NumberRange, NumberSequenceKeypoint, ColorSequenceKeypoint, Enum, Random, Instance, RaycastParams, OverlapParams, game, workspace, task, warn =\n"
+        "\tRoblox.typeof, Roblox.Vector3, Roblox.CFrame, Roblox.Color3, Roblox.UDim, Roblox.UDim2, Roblox.Vector2, Roblox.ColorSequence, Roblox.NumberSequence, Roblox.NumberRange, Roblox.NumberSequenceKeypoint, Roblox.ColorSequenceKeypoint, Roblox.Enum, Roblox.Random, Roblox.Instance,\n"
         "\tRoblox.RaycastParams, Roblox.OverlapParams, Roblox.game, Roblox.workspace, Roblox.task, Roblox.warn\n"
         "local realClock = os.clock\n"
         "local os = setmetatable({ clock = function() return Roblox.sim.now end }, { __index = os }) -- reloj simulado\n"

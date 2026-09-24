@@ -216,6 +216,7 @@ check("medalla nueva mejora", PlayerStats.medalEarned(fran, 3, 2) == true)
 check("medalla peor no mejora", PlayerStats.medalEarned(fran, 3, 1) == false)
 check("oro mejora la plata", PlayerStats.medalEarned(fran, 3, 3) == true)
 PlayerStats.medalEarned(fran, 7, 1)
+check("plumas: mejor número por nivel", PlayerStats.feathersEarned(fran, 3, 4) == true and PlayerStats.feathersEarned(fran, 3, 2) == false and PlayerStats.feathersEarned(fran, 3, 6) == true)
 PlayerStats.setSettings(fran, { masterVolume = 0.3, hudScale = 9, reduceMotion = true, bogus = 1, cameraShake = "no" })
 local settings = PlayerStats.get(fran).Settings
 check("ajustes validados", settings.masterVolume == 0.3 and settings.hudScale == 1.25 and settings.reduceMotion == true and settings.bogus == nil and settings.cameraShake == nil)
@@ -242,6 +243,7 @@ for _, f in removing do
 end
 Roblox.sim.run(1)
 franSaved = plain["Player_606"]
+check("plumas guardadas y fusionadas", franSaved.Feathers and franSaved.Feathers["3"] == 6)
 check("fusión: medallas con max, ajustes intactos", franSaved.Medals["3"] == 3 and franSaved.Medals["7"] == 2 and franSaved.Settings.masterVolume == 0.3 and franSaved.Runs == 1)
 
 print(if failures == 0 then "leaderboard OK" else string.format("leaderboard: %d fallos", failures))

@@ -157,7 +157,7 @@ function ResultsScreen.show(data: { [string]: any })
 	medalCounts.BRONZE.Text = tostring(data.bronze or 0)
 	local losses = if type(data.losses) == "number" then data.losses else 0
 	local hits = if type(data.hits) == "number" then data.hits else 0
-	stats.Text = string.format("%d levels  ·  %s  ·  %s", data.levels or 0, if losses == 0 then "no wings lost!" else string.format("%d wing%s lost", losses, if losses == 1 then "" else "s"), if hits == 0 then "no hits" else string.format("%d hit%s", hits, if hits == 1 then "" else "s"))
+	stats.Text = string.format("%d levels  ·  ✦ %d feathers  ·  %s  ·  %s", data.levels or 0, data.feathers or 0, if losses == 0 then "no wings lost!" else string.format("%d wing%s lost", losses, if losses == 1 then "" else "s"), if hits == 0 then "no hits" else string.format("%d hit%s", hits, if hits == 1 then "" else "s"))
 	if lastDuoResult and os.clock() - lastDuoClock < 30 and data.practice ~= true then
 		showRank(lastDuoResult)
 	end

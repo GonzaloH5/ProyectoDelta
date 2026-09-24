@@ -42,6 +42,7 @@ local STYLE = {
 	Lamp = { neon = true },
 	CrystalTip = { neon = true },
 	Ember = { neon = true },
+	WindVeil = { neon = true, transparency = 0.9, visual = true, noShadow = true },
 }
 
 local function palette(biome)
@@ -429,6 +430,51 @@ local function guideRing(ctx, parent, ring: Instance)
 	end
 end
 
+-- ── Corrientes: velo de color y partículas que muestran hacia dónde empuja ─────
+-- Ascendente = turquesa, estrías subiendo · descendente = violeta, bajando · lateral = blanco, cruzando.
+local WIND_COLORS = {
+	Updraft = rgb(110, 240, 230),
+	Downdraft = rgb(190, 120, 255),
+	Crosswind = rgb(240, 245, 255),
+}
+
+local function windVisual(ctx, parent, zone: BasePart)
+	local kind = zone:GetAttribute("WindKind")
+	local velocity = zone:GetAttribute("WindVelocity")
+	if typeof(velocity) ~= "Vector3" or velocity.Magnitude < 1 then
+		return
+	end
+	local color = WIND_COLORS[kind] or WIND_COLORS.Crosswind
+	local veil = ctx.kit.part(parent, "WindVeil", "WindVeil", zone.Size, zone.CFrame)
+	veil.Color = color
+	-- Emisor orientado para que su cara Top apunte hacia donde sopla la corriente.
+	local direction = velocity.Unit
+	local up = if math.abs(direction.Y) > 0.9 then zone.CFrame.LookVector else Vector3.yAxis
+	local frame = CFrame.lookAt(zone.Position, zone.Position + up, direction) -- UpVector = dirección del viento
+	-- Mismo volumen que la zona, medido en los ejes del emisor.
+	local half = zone.Size / 2
+	local function extent(axis: Vector3): number
+		return 2 * (math.abs(axis:Dot(zone.CFrame.RightVector)) * half.X + math.abs(axis:Dot(zone.CFrame.UpVector)) * half.Y + math.abs(axis:Dot(zone.CFrame.LookVector)) * half.Z)
+	end
+	local holderSize = Vector3.new(extent(frame.RightVector), extent(frame.UpVector), extent(frame.LookVector))
+	local holder = ctx.kit.part(parent, "WindEmitter", "WindVeil", holderSize, frame)
+	holder.Transparency = 1
+	local emitter = Instance.new("ParticleEmitter")
+	emitter.Texture = "rbxasset://textures/particles/sparkles_main.dds"
+	emitter.Color = ColorSequence.new(color)
+	emitter.LightEmission = 0.8
+	emitter.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(0.2, 1.4), NumberSequenceKeypoint.new(1, 0) })
+	emitter.Transparency = NumberSequence.new(0.2, 1)
+	emitter.Shape = Enum.ParticleEmitterShape.Box
+	emitter.ShapeStyle = Enum.ParticleEmitterShapeStyle.Volume
+	emitter.EmissionDirection = Enum.NormalId.Top
+	emitter.Speed = NumberRange.new(velocity.Magnitude * 2, velocity.Magnitude * 3)
+	emitter.Lifetime = NumberRange.new(1, 1.8)
+	emitter.SpreadAngle = Vector2.new(4, 4)
+	emitter.Rate = math.clamp(zone.Size.X * zone.Size.Z / 600, 10, 45)
+	emitter.Parent = holder
+end
+
 -- ── Entrada del nivel: arco de piedra + cartel ────────────────────────
 
 local function entrance(ctx, parent, face: Instance, level: Instance)
@@ -753,6 +799,14 @@ function MapDresser.dress(model: Instance, biome, options): number
 	end
 	for ring in rings do
 		guideRing(ctx, folder("Guides"), ring)
+	end
+	local wind = model:FindFirstChild("Wind")
+	if wind then
+		for _, zone in wind:GetChildren() do
+			if zone:IsA("BasePart") then
+				windVisual(ctx, folder("Wind"), zone)
+			end
+		end
 	end
 	local entranceFace = model:FindFirstChild("EntranceFace")
 	if entranceFace then

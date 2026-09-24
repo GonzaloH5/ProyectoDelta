@@ -70,6 +70,10 @@ local devRuns: { [Session]: true } = {} -- vuelos de prueba (DevStartLevel): no 
 local tutorialRuns: { [Session]: true } = {} -- vuelos del tutorial (con bot): tampoco cuentan
 local courseOf: { [Session]: Checkpoints.Course } = {}
 local runMedals: { [Session]: { [number]: number } } = {} -- medallas de este vuelo: { [3] = oros, [2] = platas, [1] = bronces }
+-- Anillos y plumas de cada sesión: anillos cruzados en el nivel actual (se reinician al cambiar de nivel o al
+-- reaparecer) y plumas recogidas por nivel (se conservan aunque se pierda el ala).
+type Pickups = { level: number, respawns: number, rings: { [number]: true }, feathers: { [number]: { [number]: true } }, counts: { [number]: number }, total: number }
+local pickups: { [Session]: Pickups } = {}
 local nextId = 0
 
 -- Sesión en la que el jugador sigue colgado (si murió o se soltó, ya no cuenta).
@@ -102,6 +106,8 @@ local function onSessionFinished(session: Session, reason: GliderSession.FinishR
 	courseOf[session] = nil
 	local medals = runMedals[session]
 	runMedals[session] = nil
+	local collected = pickups[session]
+	pickups[session] = nil
 	local wasTutorial = tutorialRuns[session]
 	local wasDev = devRuns[session]
 	tutorialRuns[session] = nil
@@ -137,6 +143,7 @@ local function onSessionFinished(session: Session, reason: GliderSession.FinishR
 			levels = if course then course:count() else session.checkpoint,
 			gold = medals and medals[3] or 0,
 			silver = medals and medals[2] or 0,
+			feathers = if collected then collected.total else 0,
 			bronze = medals and medals[1] or 0,
 			losses = session.respawns,
 			hits = session.impacts,
@@ -197,6 +204,9 @@ local function publishLevel(session: Session)
 	glider:SetAttribute("LevelTitle", title)
 	glider:SetAttribute("LevelColor", color)
 	glider:SetAttribute("LevelProgress", if session.completed then 1 else 0)
+	local collected = pickups[session]
+	glider:SetAttribute("LevelFeatherTotal", #course:feathersOf(level))
+	glider:SetAttribute("LevelFeathers", if collected then collected.counts[level] or 0 else 0)
 end
 
 local function startSession(players: { Player })
@@ -272,6 +282,12 @@ local function reachCheckpoint(session: Session, checkpoint: Checkpoints.Checkpo
 	local runTime = session.runTime
 	local info = table.clone(checkpoint.info)
 	info.medal = medal
+	local collected = pickups[session]
+	local featherTotal = #courseOf[session]:feathersOf(checkpoint.index)
+	if featherTotal > 0 then
+		info.feathers = if collected then collected.counts[checkpoint.index] or 0 else 0
+		info.featherTotal = featherTotal
+	end
 	if checkpoint.final or tutorial then
 		info.time = runTime -- la pantalla de meta muestra el tiempo del recorrido
 		info.tutorial = tutorial -- "TUTORIAL COMPLETE!" en vez de "COURSE COMPLETE!"
@@ -287,6 +303,9 @@ local function reachCheckpoint(session: Session, checkpoint: Checkpoints.Checkpo
 		if counts and medal and PlayerStats.medalEarned(player, checkpoint.index, medal) then
 			playerInfo = table.clone(info)
 			playerInfo.medalImproved = true -- mejora su medalla guardada de este nivel
+		end
+		if counts and info.feathers then
+			PlayerStats.feathersEarned(player, checkpoint.index, info.feathers)
 		end
 		remote:FireClient(player, "Checkpoint", playerInfo)
 		if counts then
@@ -420,6 +439,48 @@ remote.OnServerEvent:Connect(function(player: Player, kind: unknown, value: unkn
 	end
 end)
 
+-- ── Anillos de impulso y plumas ──────────────────────────────────────
+
+local function pickupsOf(session: Session): Pickups
+	local state = pickups[session]
+	if not state then
+		state = { level = 0, respawns = session.respawns, rings = {}, feathers = {}, counts = {}, total = 0 }
+		pickups[session] = state
+	end
+	return state
+end
+
+-- Cada paso en vuelo: anillos cruzados (energía + empujón) y plumas a menos de FeatherRadius.
+local function checkPickups(session: Session, course: Checkpoints.Course, level: number, previous: Vector3?, position: Vector3)
+	local state = pickupsOf(session)
+	if state.level ~= level or state.respawns ~= session.respawns then
+		state.level, state.respawns = level, session.respawns
+		table.clear(state.rings)
+	end
+	if previous then
+		for _, index in course:ringsCrossed(level, previous, position) do
+			if not state.rings[index] then
+				state.rings[index] = true
+				session:boostRing()
+			end
+		end
+	end
+	local taken = state.feathers[level]
+	for _, feather in course:feathersOf(level) do
+		if (taken == nil or not taken[feather.id]) and (feather.position - position).Magnitude <= Config.FeatherRadius then
+			taken = taken or {}
+			taken[feather.id] = true
+			state.feathers[level] = taken
+			state.counts[level] = (state.counts[level] or 0) + 1
+			state.total += 1
+			session.glider:SetAttribute("LevelFeathers", state.counts[level])
+			for _, player in session:riders() do
+				remote:FireClient(player, "Feather", { part = feather.part, count = state.counts[level], total = #course:feathersOf(level) })
+			end
+		end
+	end
+end
+
 -- ── Puntos seguros ────────────────────────────────────────────────────
 
 -- Tras unos segundos de vuelo limpio, la posición actual pasa a ser el punto de reaparición si está despejada:
@@ -465,6 +526,7 @@ RunService.Heartbeat:Connect(function(rawDt)
 		local position = session.root.Position
 		-- Línea ideal por delante: la asistencia apunta aquí y la cámara la usa para anticipar las curvas.
 		session.assistGoal = course:lookahead(level, position, Config.AssistLookahead)
+		session.windField = course:windAt(level, position) -- corrientes del mapa (updraft, downdraft, lateral)
 		if publishProgress then
 			if not session.completed then
 				session.glider:SetAttribute("LevelProgress", course:progress(level, position))
@@ -511,6 +573,9 @@ RunService.Heartbeat:Connect(function(rawDt)
 		end
 		if flying then
 			local previous = lastPosition[session]
+			if not session.completed then
+				checkPickups(session, course, level, previous, position)
+			end
 			local checkpoint = previous and course:crossed(previous, position, session.checkpoint)
 			if checkpoint then
 				reachCheckpoint(session, checkpoint)

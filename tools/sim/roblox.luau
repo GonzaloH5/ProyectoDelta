@@ -461,6 +461,22 @@ local NumberSequence = {
 	end,
 }
 
+local NumberRange = {
+	new = function(min, max)
+		return setmetatable({ Min = min, Max = max or min }, { __type = "NumberRange" })
+	end,
+}
+local NumberSequenceKeypoint = {
+	new = function(time, value, envelope)
+		return setmetatable({ Time = time, Value = value, Envelope = envelope or 0 }, { __type = "NumberSequenceKeypoint" })
+	end,
+}
+local ColorSequenceKeypoint = {
+	new = function(time, value)
+		return setmetatable({ Time = time, Value = value }, { __type = "ColorSequenceKeypoint" })
+	end,
+}
+
 local EnumItemMt = { __type = "EnumItem" }
 EnumItemMt.__tostring = function(item)
 	return "Enum." .. item.EnumType .. "." .. item.Name
@@ -1087,6 +1103,9 @@ local Roblox = {
 	Vector2 = Vector2,
 	ColorSequence = ColorSequence,
 	NumberSequence = NumberSequence,
+	NumberRange = NumberRange,
+	NumberSequenceKeypoint = NumberSequenceKeypoint,
+	ColorSequenceKeypoint = ColorSequenceKeypoint,
 	Enum = Enum,
 	Random = Random,
 	Instance = Instance,

@@ -94,6 +94,11 @@ titleText.Position = UDim2.fromOffset(18, 33)
 titleText.Size = UDim2.new(1, -30, 0, 18)
 titleText.TextXAlignment = Enum.TextXAlignment.Left
 titleText.TextTruncate = Enum.TextTruncate.AtEnd
+local featherText = text(card, Enum.Font.GothamBold, 15, Color3.fromRGB(255, 225, 90))
+featherText.AnchorPoint = Vector2.new(1, 0)
+featherText.Position = UDim2.new(1, -12, 0, 10)
+featherText.Size = UDim2.fromOffset(70, 20)
+featherText.TextXAlignment = Enum.TextXAlignment.Right
 local track = Instance.new("Frame")
 track.Position = UDim2.new(0, 18, 1, -14)
 track.Size = UDim2.new(1, -32, 0, 6)
@@ -400,6 +405,8 @@ function FlightHud.update(glider: Model?, side: number, dt: number)
 		end
 	end
 	setCardExpanded(os.clock() < cardExpandUntil)
+	local featherTotal = number(glider, "LevelFeatherTotal")
+	featherText.Text = if featherTotal > 0 then string.format("✦ %d/%d", number(glider, "LevelFeathers"), featherTotal) else ""
 	shownProgress += (number(glider, "LevelProgress") - shownProgress) * math.min(1, dt * 8)
 	fill.Size = UDim2.fromScale(math.clamp(shownProgress, 0, 1), 1)
 

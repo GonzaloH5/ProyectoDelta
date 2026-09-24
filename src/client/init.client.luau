@@ -53,6 +53,8 @@ remote.OnClientEvent:Connect(function(kind: unknown, data: unknown)
 		Settings.apply(data :: any)
 	elseif kind == "TutorialOffer" then
 		TutorialHints.offer()
+	elseif kind == "Feather" and type(data) == "table" then
+		FlightEffects.feather(data :: any)
 	elseif kind == "Callout" and type(data) == "table" then
 		Callouts.show(data :: any, mountedSide)
 	end

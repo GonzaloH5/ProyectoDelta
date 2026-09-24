@@ -59,6 +59,7 @@ local GliderConfig = {
 	EnergyRingBonus = 0.35, -- energía que da cada anillo de impulso
 	RingBurst = 0.2, -- impulso extra durante RingBurstTime al cruzar un anillo
 	RingBurstTime = 1,
+	FeatherRadius = 12, -- studs del ala a los que se recoge una pluma
 	RiderPumpSwing = 20, -- grados de balanceo del cuerpo al impulsarse
 	RiderPumpRate = 6, -- rad/s del columpio
 

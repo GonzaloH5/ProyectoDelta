@@ -161,7 +161,8 @@ end
 
 local current: Model? = nil
 local parts: { BasePart } = {}
-local lastImpacts, lastRespawns = 0, 0
+local lastImpacts, lastRespawns, lastRings = 0, 0, 0
+local hiddenFeathers: { BasePart } = {}
 local lastState: string? = nil
 local lastCount = -1
 local scrapeEmitter: ParticleEmitter? = nil
@@ -198,13 +199,17 @@ local function clear()
 	for _, line in speedLines do
 		line.frame.BackgroundTransparency = 1
 	end
+	for _, feather in hiddenFeathers do
+		feather.LocalTransparencyModifier = 0 -- el próximo vuelo las vuelve a tener
+	end
+	table.clear(hiddenFeathers)
 	current = nil
 end
 
 local function mount(glider: Model)
 	clear()
 	current = glider
-	lastImpacts, lastRespawns = number(glider, "Impacts"), number(glider, "Respawns")
+	lastImpacts, lastRespawns, lastRings = number(glider, "Impacts"), number(glider, "Respawns"), number(glider, "Rings")
 	lastState, lastCount = nil, -1
 	for _, part in glider:GetDescendants() do
 		if part:IsA("BasePart") and part.Name ~= "Root" and part.Transparency < 1 then
@@ -332,6 +337,21 @@ function FlightEffects.update(glider: Model?, dt: number)
 	end
 	lastImpacts = impacts
 
+	-- Anillo de impulso: destello azul y sonido.
+	local rings = number(glider, "Rings")
+	if rings > lastRings then
+		FlightAudio.play("Ring")
+		burst(root.Position, 30, {
+			Color = ColorSequence.new(Color3.fromRGB(90, 210, 255), Color3.new(1, 1, 1)),
+			Size = NumberSequence.new(1, 0),
+			Lifetime = NumberRange.new(0.3, 0.6),
+			Speed = NumberRange.new(20, 35),
+			SpreadAngle = Vector2.new(180, 180),
+			LightEmission = 1,
+		})
+	end
+	lastRings = rings
+
 	-- Reaparición: burbuja que se expande.
 	local respawns = number(glider, "Respawns")
 	if respawns > lastRespawns then
@@ -395,6 +415,24 @@ function FlightEffects.update(glider: Model?, dt: number)
 		line.frame.Position = UDim2.fromScale(0.5 + math.cos(line.angle) * radius * 0.6, 0.5 + math.sin(line.angle) * radius)
 		line.frame.Rotation = math.deg(line.angle)
 		line.frame.BackgroundTransparency = 1 - intensity * 0.55 * (1 - line.phase)
+	end
+end
+
+-- Pluma recogida (mensaje del servidor): se oculta aquí y suelta destellos dorados.
+function FlightEffects.feather(data: { [string]: any })
+	local part = data.part
+	FlightAudio.play("Feather", 1 + 0.05 * (if type(data.count) == "number" then data.count else 0))
+	if typeof(part) == "Instance" and part:IsA("BasePart") then
+		part.LocalTransparencyModifier = 1
+		table.insert(hiddenFeathers, part)
+		burst(part.Position, 20, {
+			Color = ColorSequence.new(Color3.fromRGB(255, 225, 90)),
+			Size = NumberSequence.new(0.8, 0),
+			Lifetime = NumberRange.new(0.4, 0.8),
+			Speed = NumberRange.new(8, 18),
+			SpreadAngle = Vector2.new(180, 180),
+			LightEmission = 1,
+		})
 	end
 end
 
