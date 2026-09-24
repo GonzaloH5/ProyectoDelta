@@ -209,4 +209,39 @@ end
 Roblox.sim.run(1)
 check("OR: sigue a true tras otro guardado", plain["Player_505"].TutorialDone == true and plain["Player_505"].Runs == 1)
 
+-- Medallas (mejor por nivel, fusión con max) y ajustes (el último cambio gana, validados).
+local fran = newPlayer(606, "Fran")
+Roblox.sim.run(1)
+check("medalla nueva mejora", PlayerStats.medalEarned(fran, 3, 2) == true)
+check("medalla peor no mejora", PlayerStats.medalEarned(fran, 3, 1) == false)
+check("oro mejora la plata", PlayerStats.medalEarned(fran, 3, 3) == true)
+PlayerStats.medalEarned(fran, 7, 1)
+PlayerStats.setSettings(fran, { masterVolume = 0.3, hudScale = 9, reduceMotion = true, bogus = 1, cameraShake = "no" })
+local settings = PlayerStats.get(fran).Settings
+check("ajustes validados", settings.masterVolume == 0.3 and settings.hudScale == 1.25 and settings.reduceMotion == true and settings.bogus == nil and settings.cameraShake == nil)
+for _, f in removing do
+	f(fran)
+end
+Roblox.sim.run(1)
+local franSaved = plain["Player_606"]
+check("medallas guardadas", franSaved and franSaved.Medals and franSaved.Medals["3"] == 3 and franSaved.Medals["7"] == 1)
+check("ajustes guardados", franSaved and franSaved.Settings and franSaved.Settings.masterVolume == 0.3)
+local franLoaded = nil
+PlayerStats.onLoaded(function(player, stats)
+	if player.Name == "Fran2" then
+		franLoaded = stats
+	end
+end)
+local fran2 = newPlayer(606, "Fran2")
+Roblox.sim.run(1)
+check("al volver, medallas y ajustes cargados", franLoaded and franLoaded.Medals["3"] == 3 and franLoaded.Settings.reduceMotion == true)
+PlayerStats.medalEarned(fran2, 7, 2)
+PlayerStats.runStarted(fran2)
+for _, f in removing do
+	f(fran2)
+end
+Roblox.sim.run(1)
+franSaved = plain["Player_606"]
+check("fusión: medallas con max, ajustes intactos", franSaved.Medals["3"] == 3 and franSaved.Medals["7"] == 2 and franSaved.Settings.masterVolume == 0.3 and franSaved.Runs == 1)
+
 print(if failures == 0 then "leaderboard OK" else string.format("leaderboard: %d fallos", failures))

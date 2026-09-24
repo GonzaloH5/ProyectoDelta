@@ -15,6 +15,7 @@ local TweenService = game:GetService("TweenService")
 
 local Config = require(ReplicatedStorage.Glider.GliderConfig)
 local UiScale = require(script.Parent:WaitForChild("UiScale"))
+local FlightAudio = require(script.Parent:WaitForChild("FlightAudio"))
 
 local FlightHud = {}
 
@@ -347,6 +348,7 @@ function FlightHud.update(glider: Model?, side: number, dt: number)
 		syncTime += dt
 		if syncTime >= SYNC_HOLD and now >= syncCooldownUntil then
 			syncShownUntil, syncCooldownUntil = now + SYNC_SHOW, now + SYNC_COOLDOWN
+			FlightAudio.play("InSync")
 			syncScale.Scale = 1.5
 			TweenService:Create(syncScale, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
 		end

@@ -5,6 +5,7 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local Config = require(ReplicatedStorage:WaitForChild("Glider"):WaitForChild("GliderConfig"))
 local remote = ReplicatedStorage:WaitForChild("Glider"):WaitForChild("GliderRemote") :: RemoteEvent
 
 local Settings = {}
@@ -18,22 +19,9 @@ export type Values = {
 	hudScale: number, -- 0.8-1.25
 }
 
-Settings.DEFAULTS = table.freeze({
-	masterVolume = 1,
-	effectsVolume = 1,
-	ambienceVolume = 0.8,
-	cameraShake = true,
-	reduceMotion = false,
-	hudScale = 1,
-})
-
--- Límites de cada ajuste (el servidor aplica los mismos al guardar).
-Settings.RANGES = table.freeze({
-	masterVolume = { 0, 1 },
-	effectsVolume = { 0, 1 },
-	ambienceVolume = { 0, 1 },
-	hudScale = { 0.8, 1.25 },
-})
+-- Valores por defecto y límites: compartidos con el servidor (GliderConfig), que aplica los mismos al guardar.
+Settings.DEFAULTS = Config.SettingsDefaults
+Settings.RANGES = Config.SettingsRanges
 
 local values: Values = table.clone(Settings.DEFAULTS) :: any
 local changed = Instance.new("BindableEvent")

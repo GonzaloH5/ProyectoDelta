@@ -68,6 +68,7 @@ local inCountdown: { [Session]: true } = {} -- en cuenta atrás en el paso anter
 local devRuns: { [Session]: true } = {} -- vuelos de prueba (DevStartLevel): no cuentan para las estadísticas
 local tutorialRuns: { [Session]: true } = {} -- vuelos del tutorial (con bot): tampoco cuentan
 local courseOf: { [Session]: Checkpoints.Course } = {}
+local runMedals: { [Session]: { [number]: number } } = {} -- medallas de este vuelo: { [3] = oros, [2] = platas, [1] = bronces }
 local nextId = 0
 
 -- Sesión en la que el jugador sigue colgado (si murió o se soltó, ya no cuenta).
@@ -96,8 +97,12 @@ local function onSessionFinished(session: Session, reason: GliderSession.FinishR
 	wasFlying[session] = nil
 	inCountdown[session] = nil
 	devRuns[session] = nil
+	local course = courseOf[session]
 	courseOf[session] = nil
+	local medals = runMedals[session]
+	runMedals[session] = nil
 	local wasTutorial = tutorialRuns[session]
+	local wasDev = devRuns[session]
 	tutorialRuns[session] = nil
 	for _, player in session.members do
 		if sessionOf[player] == session then
@@ -121,6 +126,27 @@ local function onSessionFinished(session: Session, reason: GliderSession.FinishR
 				player:LoadCharacter()
 			end)
 		end
+	end
+
+	-- Aterrizaron tras la meta: pantalla de resultados en el lobby (tiempo, medallas, alas perdidas).
+	if reason == "completed" and not wasTutorial then
+		local summary = {
+			time = session.runTime,
+			levels = if course then course:count() else session.checkpoint,
+			gold = medals and medals[3] or 0,
+			silver = medals and medals[2] or 0,
+			bronze = medals and medals[1] or 0,
+			losses = session.respawns,
+			hits = session.impacts,
+			practice = wasDev == true, -- empezó en un nivel de pruebas: no cuenta para récords
+		}
+		task.delay(1.5, function()
+			for _, player in riders do
+				if player.Parent == Players then
+					remote:FireClient(player, "Results", summary)
+				end
+			end
+		end)
 	end
 end
 
@@ -191,6 +217,7 @@ local function startSession(players: { Player })
 	if startCheckpoint > 0 then
 		devRuns[session] = true
 	end
+	runMedals[session] = {}
 	publishLevel(session)
 	for _, player in duo do
 		sessionOf[player] = session
@@ -229,20 +256,34 @@ end
 -- El ala cruzó un checkpoint: desde aquí reaparece, y ambos ven la pantalla de checkpoint.
 -- Récords (solo vuelos desde la salida): estadísticas de cada jugador y clasificación del dúo.
 local function reachCheckpoint(session: Session, checkpoint: Checkpoints.Checkpoint)
+	-- Medalla del nivel superado (antes de setCheckpoint, que reinicia los contadores del nivel):
+	-- oro = sin golpes · plata = sin perder el ala · bronce = superado. El tutorial no da medallas.
+	local tutorial = tutorialRuns[session] == true
+	local medal = if tutorial then nil elseif session.levelHits == 0 and session.levelLosses == 0 then 3 elseif session.levelLosses == 0 then 2 else 1
 	session:setCheckpoint(checkpoint.index, checkpoint.spawn, checkpoint.final)
 	publishLevel(session)
-	local counts = not devRuns[session] and not tutorialRuns[session]
+	local counts = not devRuns[session] and not tutorial
 	local riders = session:riders()
 	local runTime = session.runTime
-	local info = checkpoint.info
-	if checkpoint.final or tutorialRuns[session] then
-		info = table.clone(info)
+	local info = table.clone(checkpoint.info)
+	info.medal = medal
+	if checkpoint.final or tutorial then
 		info.time = runTime -- la pantalla de meta muestra el tiempo del recorrido
-		info.tutorial = tutorialRuns[session] -- "TUTORIAL COMPLETE!" en vez de "COURSE COMPLETE!"
+		info.tutorial = tutorial -- "TUTORIAL COMPLETE!" en vez de "COURSE COMPLETE!"
+	end
+	if medal then
+		local medals = runMedals[session] or {}
+		medals[medal] = (medals[medal] or 0) + 1
+		runMedals[session] = medals
 	end
 	local personalBest: { [Player]: boolean } = {}
 	for _, player in riders do
-		remote:FireClient(player, "Checkpoint", info)
+		local playerInfo = info
+		if counts and medal and PlayerStats.medalEarned(player, checkpoint.index, medal) then
+			playerInfo = table.clone(info)
+			playerInfo.medalImproved = true -- mejora su medalla guardada de este nivel
+		end
+		remote:FireClient(player, "Checkpoint", playerInfo)
 		if counts then
 			-- Solo récords: el siguiente vuelo vuelve a empezar en la salida.
 			PlayerStats.levelCleared(player, checkpoint.index)
@@ -274,6 +315,9 @@ Lobby.start({ isBusy = isBusy, onDuoReady = startSession })
 -- esté en el lobby; si no aparece en ~30 s o ya está volando, no se ofrece.
 local tutorialOffered: { [Player]: true } = {}
 PlayerStats.onLoaded(function(player: Player, stats: PlayerStats.Stats)
+	if next(stats.Settings) ~= nil and player.Parent == Players then
+		remote:FireClient(player, "Settings", stats.Settings) -- ajustes guardados (volumen, cámara, HUD)
+	end
 	if stats.TutorialDone or tutorialCourse:count() == 0 then
 		return
 	end
@@ -315,6 +359,10 @@ end
 
 remote.OnServerEvent:Connect(function(player: Player, kind: unknown, value: unknown)
 	if not allowMessage(player, kind) then
+		return
+	end
+	if kind == "Settings" then
+		PlayerStats.setSettings(player, value) -- se validan allí (claves conocidas, tipos y rangos)
 		return
 	end
 	if kind == "TutorialAnswer" then

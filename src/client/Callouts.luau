@@ -12,6 +12,7 @@ local UserInputService = game:GetService("UserInputService")
 local Config = require(ReplicatedStorage.Glider.GliderConfig)
 local remote = ReplicatedStorage:WaitForChild("Glider"):WaitForChild("GliderRemote") :: RemoteEvent
 local UiScale = require(script.Parent:WaitForChild("UiScale"))
+local FlightAudio = require(script.Parent:WaitForChild("FlightAudio"))
 
 local Callouts = {}
 
@@ -166,6 +167,9 @@ function Callouts.show(data: { [string]: any }, mySide: number)
 			bubble.Visible = false
 		end
 	end)
+	if not mine then
+		FlightAudio.play("Callout")
+	end
 	if not mine and type(data.userId) == "number" then
 		local speaker = Players:GetPlayerByUserId(data.userId)
 		headBubble(speaker and speaker.Character, caption)

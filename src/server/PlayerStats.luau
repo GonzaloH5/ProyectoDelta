@@ -4,6 +4,9 @@
 --   · BestTime      mejor tiempo del recorrido completo desde la salida (segundos; nil = aún no lo terminó)
 --   · Completions   recorridos terminados · Runs  vuelos empezados · Crashes  choques
 --   · TutorialDone  ya hizo (o saltó) el tutorial: no vuelve a empezar solo al entrar
+--   · Medals        mejor medalla de cada nivel: { ["12"] = 3 } (3 oro = sin golpes, 2 plata = sin perder el
+--                   ala, 1 bronce = superado)
+--   · Settings      ajustes del jugador (volumen, cámara, HUD): el último cambio gana
 -- NO se guarda por dónde iba: cada vuelo empieza siempre en la salida.
 --
 -- Guardado con fusión (UpdateAsync): los récords se combinan con max/min y los contadores suman lo pendiente.
@@ -12,6 +15,9 @@
 
 local DataStoreService = game:GetService("DataStoreService")
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Config = require(ReplicatedStorage:WaitForChild("Glider"):WaitForChild("GliderConfig"))
 
 local PlayerStats = {}
 
@@ -27,6 +33,8 @@ export type Stats = {
 	Runs: number,
 	Crashes: number,
 	TutorialDone: boolean,
+	Medals: { [string]: number },
+	Settings: { [string]: any },
 }
 
 -- Sumas aún no escritas en el DataStore.
@@ -37,6 +45,7 @@ type Entry = {
 	pending: Pending,
 	dirty: boolean,
 	loaded: boolean, -- la lectura terminó (bien o mal): ya se puede guardar
+	settingsChanged: boolean, -- el jugador cambió ajustes desde la última escritura (sustituyen a los guardados)
 	leaderstats: Folder,
 }
 
@@ -50,7 +59,26 @@ local function emptyPending(): Pending
 end
 
 local function emptyStats(): Stats
-	return { HighestLevel = 0, BestTime = nil, Completions = 0, Runs = 0, Crashes = 0, TutorialDone = false }
+	return { HighestLevel = 0, BestTime = nil, Completions = 0, Runs = 0, Crashes = 0, TutorialDone = false, Medals = {}, Settings = {} }
+end
+
+-- Un ajuste válido (clave conocida, tipo del valor por defecto y dentro de su rango) o nil.
+local function cleanSetting(key: unknown, value: unknown): any
+	if type(key) ~= "string" then
+		return nil
+	end
+	local default = Config.SettingsDefaults[key]
+	if default == nil or typeof(value) ~= typeof(default) then
+		return nil
+	end
+	local range = Config.SettingsRanges[key]
+	if type(value) == "number" then
+		if value ~= value then
+			return nil
+		end
+		return if range then math.clamp(value, range[1], range[2]) else value
+	end
+	return value
 end
 
 -- Datos guardados → Stats, descartando lo que no tenga el tipo esperado.
@@ -73,7 +101,31 @@ local function sanitize(raw: unknown): Stats
 	stats.Runs = math.floor(number("Runs") or 0)
 	stats.Crashes = math.floor(number("Crashes") or 0)
 	stats.TutorialDone = data.TutorialDone == true
+	local medals = data.Medals
+	if type(medals) == "table" then
+		for key, medal in medals :: { [unknown]: unknown } do
+			if type(key) == "string" and tonumber(key) and type(medal) == "number" and medal >= 1 and medal <= 3 then
+				stats.Medals[key] = math.floor(medal)
+			end
+		end
+	end
+	local settings = data.Settings
+	if type(settings) == "table" then
+		for key, value in settings :: { [unknown]: unknown } do
+			local clean = cleanSetting(key, value)
+			if clean ~= nil then
+				stats.Settings[key :: string] = clean
+			end
+		end
+	end
 	return stats
+end
+
+-- Mejor medalla de cada nivel entre dos fichas (se queda en `into`).
+local function mergeMedals(into: { [string]: number }, from: { [string]: number })
+	for key, medal in from do
+		into[key] = math.max(into[key] or 0, medal)
+	end
 end
 
 local function formatTime(seconds: number?): string
@@ -156,6 +208,10 @@ local function load(player: Player, entry: Entry)
 			stats.Runs = saved.Runs + pending.Runs
 			stats.Crashes = saved.Crashes + pending.Crashes
 			stats.TutorialDone = stats.TutorialDone or saved.TutorialDone
+			mergeMedals(stats.Medals, saved.Medals)
+			if not entry.settingsChanged then
+				stats.Settings = saved.Settings
+			end
 		end
 	end
 	entry.loaded = true
@@ -177,8 +233,11 @@ local function save(player: Player, entry: Entry)
 	local highest = entry.stats.HighestLevel
 	local bestTime = entry.stats.BestTime
 	local tutorialDone = entry.stats.TutorialDone
+	local medals = table.clone(entry.stats.Medals)
+	local settings = if entry.settingsChanged then table.clone(entry.stats.Settings) else nil
 	entry.pending = emptyPending()
 	entry.dirty = false
+	entry.settingsChanged = false
 
 	local ok = retry("guardar " .. player.Name, function()
 		return dataStore:UpdateAsync(keyOf(player.UserId), function(raw: unknown)
@@ -191,6 +250,10 @@ local function save(player: Player, entry: Entry)
 			saved.Runs += pending.Runs
 			saved.Crashes += pending.Crashes
 			saved.TutorialDone = saved.TutorialDone or tutorialDone
+			mergeMedals(saved.Medals, medals)
+			if settings then
+				saved.Settings = settings
+			end
 			local data = saved :: any
 			data.Version = VERSION
 			return data, { player.UserId } -- UserIds: para peticiones de borrado de datos (GDPR)
@@ -202,6 +265,7 @@ local function save(player: Player, entry: Entry)
 		entry.pending.Runs += pending.Runs
 		entry.pending.Crashes += pending.Crashes
 		entry.dirty = true
+		entry.settingsChanged = entry.settingsChanged or settings ~= nil
 	end
 end
 
@@ -225,7 +289,7 @@ function PlayerStats.runStarted(player: Player)
 	end)
 end
 
--- Chocó (el ala reaparece en su checkpoint).
+-- Perdió el ala (reaparece en su último punto seguro).
 function PlayerStats.crashed(player: Player)
 	change(player, function(stats, pending)
 		stats.Crashes += 1
@@ -261,6 +325,39 @@ function PlayerStats.courseCompleted(player: Player, runTime: number): boolean
 		end
 	end)
 	return record
+end
+
+-- Medalla de un nivel (1-3). Devuelve true si mejora la que tenía.
+function PlayerStats.medalEarned(player: Player, level: number, medal: number): boolean
+	local entry = entries[player]
+	local key = tostring(level)
+	if not entry or medal <= (entry.stats.Medals[key] or 0) then
+		return false
+	end
+	entry.stats.Medals[key] = medal
+	entry.dirty = true
+	return true
+end
+
+-- Cambia ajustes del jugador (los inválidos se ignoran). Devuelve los ajustes resultantes.
+function PlayerStats.setSettings(player: Player, changes: unknown)
+	local entry = entries[player]
+	if not entry or type(changes) ~= "table" then
+		return
+	end
+	local count = 0
+	for key, value in changes :: { [unknown]: unknown } do
+		count += 1
+		if count > 16 then
+			break
+		end
+		local clean = cleanSetting(key, value)
+		if clean ~= nil then
+			entry.stats.Settings[key :: string] = clean
+			entry.settingsChanged = true
+			entry.dirty = true
+		end
+	end
 end
 
 -- Terminó o saltó el tutorial: no vuelve a empezar solo.
@@ -300,6 +397,7 @@ local function onPlayerAdded(player: Player)
 		pending = emptyPending(),
 		dirty = false,
 		loaded = false,
+		settingsChanged = false,
 		leaderstats = createLeaderstats(player),
 	}
 	entries[player] = entry

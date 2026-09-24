@@ -3,6 +3,8 @@
 --   · banda inclinada del color del bioma que entra deslizando desde la izquierda
 --   · "CHECKPOINT" con golpe de escala · nivel superado y el siguiente
 --   · fila de rombos de progreso (el recién superado "salta") · aviso de bioma nuevo
+--   · medalla del nivel (oro = sin golpes, plata = sin perder el ala, bronce = superado)
+--   · último nivel de un capítulo: "CHAPTER N CLEAR!" con el nombre del bioma
 --   · en la meta: tiempo del recorrido y, poco después (showResult), récord del dúo / puesto / récord personal
 -- El servidor manda los datos (Checkpoints.info); aquí solo se dibuja.
 
@@ -17,6 +19,12 @@ local HOLD_TIME, FINAL_HOLD_TIME = 1.7, 4.5
 local MAX_DIAMONDS = 20 -- con más niveles, el progreso se muestra como texto
 local DEFAULT_COLOR = Color3.fromRGB(255, 110, 95)
 local RECORD_COLOR = Color3.fromRGB(255, 205, 50)
+-- Medallas: nombre, color y lema (índice = 1 bronce, 2 plata, 3 oro).
+local MEDALS = {
+	{ name = "BRONZE", color = Color3.fromRGB(215, 140, 80), note = "Level cleared" },
+	{ name = "SILVER", color = Color3.fromRGB(215, 225, 240), note = "No wing lost" },
+	{ name = "GOLD", color = Color3.fromRGB(255, 205, 50), note = "Flawless!" },
+}
 local BAND_Y = UDim.new(0.5, -12)
 
 local function tween(instance: Instance, seconds: number, goal: { [string]: any }, style: Enum.EasingStyle?, direction: Enum.EasingDirection?)
@@ -170,6 +178,41 @@ pillText.TextSize = 16
 pillText.TextColor3 = Color3.new(1, 1, 1)
 pillText.Parent = pill
 
+-- Medalla del nivel (a la derecha de la banda).
+local medalFrame = Instance.new("Frame")
+medalFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+medalFrame.Position = UDim2.new(0.5, 300, 0.5, -30)
+medalFrame.Size = UDim2.fromOffset(78, 78)
+medalFrame.BorderSizePixel = 0
+medalFrame.Visible = false
+medalFrame.Parent = root
+local medalCorner = Instance.new("UICorner")
+medalCorner.CornerRadius = UDim.new(1, 0)
+medalCorner.Parent = medalFrame
+local medalRing = Instance.new("UIStroke")
+medalRing.Thickness = 4
+medalRing.Color = Color3.new(1, 1, 1)
+medalRing.Parent = medalFrame
+local medalScale = Instance.new("UIScale")
+medalScale.Parent = medalFrame
+local medalName = Instance.new("TextLabel")
+medalName.Size = UDim2.fromScale(1, 1)
+medalName.BackgroundTransparency = 1
+medalName.Font = Enum.Font.GothamBlack
+medalName.TextSize = 15
+medalName.TextColor3 = Color3.fromRGB(40, 30, 20)
+medalName.Parent = medalFrame
+local medalNote = Instance.new("TextLabel")
+medalNote.AnchorPoint = Vector2.new(0.5, 0)
+medalNote.Position = UDim2.new(0.5, 0, 1, 6)
+medalNote.Size = UDim2.fromOffset(200, 18)
+medalNote.BackgroundTransparency = 1
+medalNote.Font = Enum.Font.GothamBold
+medalNote.TextSize = 15
+medalNote.TextColor3 = Color3.new(1, 1, 1)
+medalNote.Parent = medalFrame
+stroke(medalNote, 2, 0.4)
+
 gui.Parent = (Players.LocalPlayer :: Player):WaitForChild("PlayerGui")
 
 -- ── Contenido ─────────────────────────────────────────────────────────
@@ -237,9 +280,10 @@ function CheckpointBanner.show(data: { [string]: any })
 	local time = if type(data.time) == "number" then data.time else nil
 	finalToken = if final then mine else -1
 
+	local chapter = if type(data.chapter) == "number" and not final then data.chapter else nil
 	band.BackgroundColor3 = color
-	title.Text = if final and tutorial then "TUTORIAL COMPLETE!" elseif final then "COURSE COMPLETE!" else "CHECKPOINT"
-	title.TextSize = if final then 54 else 64
+	title.Text = if final and tutorial then "TUTORIAL COMPLETE!" elseif final then "COURSE COMPLETE!" elseif chapter then string.format("CHAPTER %d CLEAR!", chapter) else "CHECKPOINT"
+	title.TextSize = if final or chapter then 54 else 64
 	titleStroke.Color = color:Lerp(Color3.new(0, 0, 0), 0.55)
 	subtitle.Text = if final and tutorial
 		then "You're ready to fly with a friend!"
@@ -252,11 +296,31 @@ function CheckpointBanner.show(data: { [string]: any })
 		elseif final
 		then "Land on the island to return to the lobby"
 		else string.format("NEXT  »  LEVEL %02d  ·  %s", index + 1, tostring(data.nextTitle or ""))
+	if chapter and type(data.chapterTitle) == "string" then
+		subtitle.Text = string.format("%s COMPLETE  ·  LEVEL %02d CLEARED", upper(data.chapterTitle), index)
+	end
 	local newBiome = data.newBiome
 	pill.Visible = type(newBiome) == "string"
 	pill.BackgroundColor3 = color:Lerp(Color3.new(0, 0, 0), 0.25)
 	pillScale.Scale = 1
 	pillText.Text = if type(newBiome) == "string" then "NEW BIOME  ·  " .. upper(newBiome) else ""
+
+	-- Medalla del nivel (con un salto; "NEW BEST" si mejora la guardada).
+	local medal = if type(data.medal) == "number" then MEDALS[data.medal] else nil
+	medalFrame.Visible = false
+	if medal then
+		medalFrame.BackgroundColor3 = medal.color
+		medalName.Text = medal.name
+		medalNote.Text = if data.medalImproved == true then medal.note .. "  ·  NEW BEST" else medal.note
+		task.delay(0.35, function()
+			if token ~= mine then
+				return
+			end
+			medalFrame.Visible = true
+			medalScale.Scale = 2.4
+			tween(medalScale, 0.5, { Scale = 1 }, Enum.EasingStyle.Back)
+		end)
+	end
 	local newest = buildDiamonds(index, total, color)
 
 	-- Estado inicial (fuera de pantalla / invisible) y entrada.
@@ -312,6 +376,7 @@ function CheckpointBanner.show(data: { [string]: any })
 		tween(title, 0.2, { TextTransparency = 1 })
 		tween(titleStroke, 0.2, { Transparency = 1 })
 		tween(details, 0.2, { GroupTransparency = 1 })
+		medalFrame.Visible = false
 		task.delay(0.35, function()
 			if token == mine then
 				gui.Enabled = false

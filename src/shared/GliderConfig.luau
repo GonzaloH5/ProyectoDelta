@@ -172,6 +172,22 @@ local GliderConfig = {
 	Callouts = table.freeze({ "Climb!", "Dive!", "Left!", "Right!", "Nice!" }),
 	CalloutCooldown = 0.8, -- segundos mínimos entre dos avisos del mismo jugador
 
+	-- ── Ajustes del jugador (panel de ajustes; se guardan en PlayerStats.Settings) ─────────
+	SettingsDefaults = table.freeze({
+		masterVolume = 1, -- 0-1
+		effectsVolume = 1, -- 0-1: golpes, viento, avisos
+		ambienceVolume = 0.8, -- 0-1: ambiente del bioma
+		cameraShake = true,
+		reduceMotion = false, -- sin alabeo de cámara, cambios de FOV, temblores ni líneas de velocidad
+		hudScale = 1,
+	}),
+	SettingsRanges = table.freeze({
+		masterVolume = { 0, 1 },
+		effectsVolume = { 0, 1 },
+		ambienceVolume = { 0, 1 },
+		hudScale = { 0.8, 1.25 },
+	}),
+
 	-- ── Red ────────────────────────────────────────────────────────────
 	MaxInputsPerSecond = 30, -- el servidor ignora mensajes por encima de esto
 	StateBroadcastInterval = 0.1, -- s entre actualizaciones de atributos de depuración

@@ -21,6 +21,10 @@ local OtherDuos = require(script:WaitForChild("OtherDuos"))
 local Tutorial = require(script:WaitForChild("Tutorial"))
 local TutorialHints = require(script:WaitForChild("TutorialHints"))
 local Callouts = require(script:WaitForChild("Callouts"))
+local FlightAudio = require(script:WaitForChild("FlightAudio"))
+local FlightEffects = require(script:WaitForChild("FlightEffects"))
+local ResultsScreen = require(script:WaitForChild("ResultsScreen"))
+local Settings = require(script:WaitForChild("Settings"))
 
 local player = Players.LocalPlayer
 Tutorial.show() -- al unirse a la sala
@@ -33,8 +37,14 @@ local sentAxis = 0
 remote.OnClientEvent:Connect(function(kind: unknown, data: unknown)
 	if kind == "Checkpoint" and type(data) == "table" then
 		CheckpointBanner.show(data :: any)
+		FlightEffects.checkpoint(data :: any)
 	elseif kind == "DuoResult" and type(data) == "table" then
 		CheckpointBanner.showResult(data :: any)
+		ResultsScreen.duoResult(data :: any)
+	elseif kind == "Results" and type(data) == "table" then
+		ResultsScreen.show(data :: any)
+	elseif kind == "Settings" and type(data) == "table" then
+		Settings.apply(data :: any)
 	elseif kind == "TutorialOffer" then
 		TutorialHints.offer()
 	elseif kind == "Callout" and type(data) == "table" then
@@ -150,6 +160,8 @@ RunService:BindToRenderStep("GliderClient", Enum.RenderPriority.Camera.Value + 1
 	end
 
 	FlightHud.update(mountedGlider, mountedSide, dt)
+	FlightAudio.update(mountedGlider)
+	FlightEffects.update(mountedGlider, dt)
 	TutorialHints.update(mountedGlider)
 	OtherDuos.update(gliderFolder, mountedGlider, dt)
 end)

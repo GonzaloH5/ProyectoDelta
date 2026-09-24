@@ -319,6 +319,7 @@ function GliderSession.new(
 	glider:SetAttribute("Checkpoint", self.checkpoint)
 	glider:SetAttribute("Hearts", self.health.hearts)
 	glider:SetAttribute("MaxHearts", Config.WingHearts)
+	glider:SetAttribute("Span", size.X) -- efectos del cliente ("Close!")
 	self:_setState("Countdown")
 	self:_publishSlots()
 	return self

@@ -17,6 +17,8 @@ export type Checkpoint = {
 local Checkpoints = {}
 Checkpoints.__index = Checkpoints
 
+local LEVELS_PER_CHAPTER = 5 -- MapBuilder: 10 capítulos de 5 niveles, un bioma cada uno
+
 -- Por nivel: línea ideal (Entry → Route → Exit) con distancias acumuladas, título y color del bioma (HUD).
 type LevelInfo = { points: { Vector3 }, lengths: { number }, total: number, title: string, color: Color3?, biome: string? }
 
@@ -123,6 +125,9 @@ function Checkpoints.new(map: Instance?): Course
 				final = final,
 				color = color,
 				newBiome = if biome and biome ~= previousBiome then biome else nil, -- anuncia el cambio de bioma
+				-- Último nivel de un capítulo: "CHAPTER N CLEAR!" con el nombre de su bioma.
+				chapter = if index % LEVELS_PER_CHAPTER == 0 and levelCount >= LEVELS_PER_CHAPTER then index // LEVELS_PER_CHAPTER else nil,
+				chapterTitle = biomeOf(map:FindFirstChild(string.format("Level%02d", index))),
 			},
 		})
 		previousBiome = biome or previousBiome
