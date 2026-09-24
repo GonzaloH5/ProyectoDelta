@@ -31,6 +31,7 @@ export type State = {
 	pitchVelocity: number,
 	turnRate: number, -- grados/s (+ = izquierda)
 	push: Vector3, -- empujón de separación tras un contacto (se desvanece)
+	boost: number, -- impulso de avance (0 = nada, 0,35 = uno se balancea, 0,7 = los dos); lo pone la sesión
 }
 
 export type Health = {
@@ -81,6 +82,7 @@ function GliderPhysics.newState(yaw: number): State
 		pitchVelocity = 0,
 		turnRate = 0,
 		push = Vector3.zero,
+		boost = 0,
 	}
 end
 
@@ -191,13 +193,15 @@ function GliderPhysics.step(state: State, liftInput: number, balanceInput: numbe
 	state.pitch, state.pitchVelocity = GliderMath.spring(state.pitch, state.pitchVelocity, (state.verticalSpeed / range) * Config.MaxPitch, Config.PitchResponse, Config.PitchDamping, dt)
 
 	-- Inercia: en picado se gana velocidad, subiendo se pierde; tras un golpe se recupera poco a poco.
-	local targetSpeed = Config.ForwardSpeed
+	-- Impulso (balanceo): multiplica el avance y se alcanza más rápido.
+	local targetSpeed = Config.ForwardSpeed * (1 + state.boost)
 	if Config.MomentumEnabled then
 		local dive = math.max(0, -state.verticalSpeed) / Config.MaxFallSpeed
 		local climb = math.max(0, state.verticalSpeed) / Config.MaxClimbSpeed
 		targetSpeed *= 1 + dive * Config.MomentumDive - climb * Config.MomentumClimb
 	end
-	state.speed = GliderMath.approach(state.speed, targetSpeed, Config.SpeedResponse, dt)
+	local response = if state.boost > 0 and targetSpeed > state.speed then Config.BoostResponse else Config.SpeedResponse
+	state.speed = GliderMath.approach(state.speed, targetSpeed, response, dt)
 
 	state.push = state.push * math.exp(-Config.ContactPushDecay * dt)
 end
@@ -339,8 +343,9 @@ function GliderPhysics.sense(state: State, position: Vector3, velocity: Vector3,
 end
 
 -- Un paso completo: percibir, volar, resolver contactos y daño. Devuelve la velocidad a aplicar y lo ocurrido.
--- options.now = reloj (s) · assistTurn · landing · windVertical (viento de la sesión, studs/s).
-function GliderPhysics.fly(state: State, health: Health, liftInput: number, balanceInput: number, position: Vector3, dims: Dimensions, dt: number, params: RaycastParams, options: { now: number, assistTurn: number?, landing: boolean?, windVertical: number? }): FlyResult
+-- options.now = reloj (s) · assistTurn · landing · windVertical (viento suave de la sesión, studs/s) ·
+-- wind (corriente del mapa: GliderPhysics.windAt; la vertical respeta techo y suelo, la horizontal empuja).
+function GliderPhysics.fly(state: State, health: Health, liftInput: number, balanceInput: number, position: Vector3, dims: Dimensions, dt: number, params: RaycastParams, options: { now: number, assistTurn: number?, landing: boolean?, windVertical: number?, wind: Vector3? }): FlyResult
 	local sense = GliderPhysics.sense(state, position, GliderPhysics.velocity(state), dims, dt, params, options.landing)
 	local result: FlyResult = { velocity = Vector3.zero, event = nil, contact = nil, landed = false, skimming = false }
 	if options.landing and sense.floorGap and sense.floorGap <= Config.GroundClearance then
@@ -357,9 +362,50 @@ function GliderPhysics.fly(state: State, health: Health, liftInput: number, bala
 	end
 	result.skimming = sense.floorGap ~= nil and sense.floorGap < Config.SkimGap
 	-- El viento (y la asistencia de altura) se suman sin pasar los topes del techo y del cojín.
-	local vertical = math.clamp(state.verticalSpeed + (options.windVertical or 0), math.min(sense.minVertical, sense.maxVertical), sense.maxVertical)
-	result.velocity = forwardOf(state.yaw) * state.speed + Vector3.new(0, vertical, 0) + state.push
+	local wind = options.wind or Vector3.zero
+	local vertical = math.clamp(state.verticalSpeed + (options.windVertical or 0) + wind.Y, math.min(sense.minVertical, sense.maxVertical), sense.maxVertical)
+	result.velocity = forwardOf(state.yaw) * state.speed + Vector3.new(wind.X, vertical, wind.Z) + state.push
 	return result
+end
+
+-- ── Corrientes de aire del mapa ──────────────────────────────────────
+
+export type WindZone = { cframe: CFrame, half: Vector3, velocity: Vector3 }
+
+-- Suma de las corrientes que afectan a `position`. Cada zona es una caja orientada; su fuerza entra y sale
+-- suave en los últimos WindEdge studs de cada borde (no hay tirones al entrar).
+function GliderPhysics.windAt(zones: { WindZone }?, position: Vector3): Vector3
+	local total = Vector3.zero
+	if not zones then
+		return total
+	end
+	local edge = Config.WindEdge
+	for _, zone in zones do
+		local p = zone.cframe:PointToObjectSpace(position)
+		local h = zone.half
+		local dx, dy, dz = h.X - math.abs(p.X), h.Y - math.abs(p.Y), h.Z - math.abs(p.Z)
+		if dx > 0 and dy > 0 and dz > 0 then
+			local fade = math.clamp(math.min(dx, dy, dz) / edge, 0, 1)
+			total += zone.velocity * fade
+		end
+	end
+	return total
+end
+
+-- Zonas de corriente de un modelo (carpeta Wind con marcadores de atributo WindVelocity).
+function GliderPhysics.windZones(model: Instance?): { WindZone }
+	local zones: { WindZone } = {}
+	local folder = model and model:FindFirstChild("Wind")
+	if not folder then
+		return zones
+	end
+	for _, marker in folder:GetChildren() do
+		local velocity = marker:GetAttribute("WindVelocity")
+		if marker:IsA("BasePart") and typeof(velocity) == "Vector3" then
+			table.insert(zones, { cframe = marker.CFrame, half = marker.Size / 2, velocity = velocity })
+		end
+	end
+	return zones
 end
 
 return GliderPhysics

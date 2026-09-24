@@ -1,6 +1,6 @@
 -- Dúo descuidado (FlightTester.SLOPPY) en modo juego: corazones, asistencia del nivel, puntos seguros y
 -- reapariciones. Mide lo que perdona cada nivel: golpes (corazones perdidos), alas perdidas y tiempo.
--- Argumentos: from, to, seeds (semillas por nivel, 3 por defecto), dress.
+-- Argumentos: from, to, seeds (semillas por nivel, 3 por defecto), dress, pump=true (se balancean en las rectas).
 local ServerScriptService = game:GetService("ServerScriptService")
 local template = Instance.new("Model")
 template.Name = "AlaDelta"
@@ -30,6 +30,7 @@ while map:FindFirstChild(string.format("Level%02d", index)) and index <= (ARGS.t
 		local pilot = table.clone(FlightTester.SLOPPY)
 		pilot.seed = seed * 7919 + index
 		pilot.stopOnLoss = false
+		pilot.pump = ARGS.pump == true
 		local _, info = FlightTester.run(index, nil, pilot)
 		hits += info.hits
 		losses += info.losses

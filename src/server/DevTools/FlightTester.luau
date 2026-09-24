@@ -59,7 +59,8 @@ end
 -- reaction = segundos de retraso · deadband = precisión al colocarse en la barra (studs).
 -- maxTurn / maxLift = fracción del giro y de la subida/bajada máximos que se atreve a usar el piloto.
 -- Opcionales: mode ("strict" | "game"), jitter = error de cada jugador al elegir su sitio (studs, aleatorio),
--- reactions = { a, b } (cada jugador con su retraso), seed, stopOnLoss (false = reaparece y sigue).
+-- reactions = { a, b } (cada jugador con su retraso), seed, stopOnLoss (false = reaparece y sigue),
+-- pump (modo juego: los dos se balancean en las rectas mientras quede energía, como un dúo con prisa).
 FlightTester.FULL = { name = "completo", maxTurn = 1, maxLift = 1, lookahead = 100, reaction = 0.3, deadband = 0.15 }
 FlightTester.CALM = { name = "tranquilo", maxTurn = 0.62, maxLift = 0.68, lookahead = 130, reaction = 0.3, deadband = 0.15 }
 -- Novato: reacciona tarde, se coloca "más o menos" y mira menos adelante (va corrigiendo a toques).
@@ -171,6 +172,7 @@ function FlightTester.run(levelIndex: number, routeName: string?, pilot, root: I
 	local safe = { pos = pos, yaw = state.yaw, segment = 1 }
 	local clean, sinceSafe = 0, 0
 	local strength = assistStrength(levelIndex, tutorial)
+	local energy, pumping = 1, false
 	local function where(): string
 		return string.format("%.0f de la entrada", (flat(pos - level.Entry.Position)).Magnitude)
 	end
@@ -234,6 +236,17 @@ function FlightTester.run(levelIndex: number, routeName: string?, pilot, root: I
 			if strength > 0 then
 				local assistGoal = ahead(path, segment, pos, Config.AssistLookahead)
 				assistTurn = GliderPhysics.pursuitTurn(pos, GliderPhysics.forwardOf(state.yaw), assistGoal, state.speed) * Config.AssistTurnFraction * strength
+			end
+			if pilot.pump then
+				-- Impulso en las rectas: empiezan con ≥ 40 % de energía y paran al girar fuerte o sin energía.
+				local straight = math.abs(wantTurn) < Config.MaxTurnRate * 0.25
+				pumping = straight and (energy > (if pumping then 0.05 else 0.4))
+				if pumping then
+					energy = math.max(0, energy - Config.EnergyDrainPerRider * 2 * DT)
+				else
+					energy = math.min(1, energy + Config.EnergyRecharge * DT)
+				end
+				state.boost = if pumping then Config.PumpBoostBoth else 0
 			end
 			local flown = GliderPhysics.fly(state, health, liftInput, balanceInput, pos, dims, DT, params, { now = t, assistTurn = assistTurn })
 			if flown.event == "impact" or flown.event == "crash" then
@@ -353,14 +366,14 @@ end
 --   · { piloto estricto, margen }: el ala inflada `margen` studs por cada lado no toca nada (el techo no cuenta).
 --   · { piloto de juego, golpes }: llega sin perder el ala y con como mucho esos golpes (corazones perdidos).
 --   1-10  (capítulos 1-2, aprender): el novato llega en el juego sin golpes · el tranquilo pasa con ≥ 8
---   11-25 (capítulos 3-5, practicar): el novato llega en el juego (≤ 2 golpes) · el tranquilo pasa con ≥ 4
+--   11-25 (capítulos 3-5, practicar): el novato llega en el juego (≤ 1 golpe: hay 2 corazones) · el tranquilo pasa con ≥ 4
 --   26-50 (capítulos 6-10, dominar): el completo pasa con ≥ 4 y el tranquilo llega en el juego sin golpes
 --         (en la regla estricta el tranquilo puede fallar: exige maniobras fuertes, pero se pueden hacer)
 -- Reglas de diseño que el piloto no mide: ≥ 2 s de vuelo (120 studs) entre dos obstáculos; como mucho una
 -- idea nueva por nivel; el último nivel de cada capítulo combina las ideas del capítulo.
 FlightTester.RULES = {
 	{ upTo = 10, checks = { { FlightTester.NOVICE_GAME, 0 }, { FlightTester.CALM, 8 } } },
-	{ upTo = 25, checks = { { FlightTester.NOVICE_GAME, 2 }, { FlightTester.CALM, 4 } } },
+	{ upTo = 25, checks = { { FlightTester.NOVICE_GAME, 1 }, { FlightTester.CALM, 4 } } },
 	{ upTo = 50, checks = { { FlightTester.FULL, 4 }, { FlightTester.CALM_GAME, 0 } } },
 }
 

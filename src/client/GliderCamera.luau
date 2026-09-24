@@ -173,6 +173,11 @@ function GliderCamera.update(root: BasePart, dt: number)
 		local boost = math.min(math.max(0, -verticalSpeed) * Config.CameraDiveFovBoost, Config.CameraMaxFovBoost)
 		local drop = math.min(math.max(0, verticalSpeed) * Config.CameraClimbFovDrop, Config.CameraMaxFovDrop)
 		targetFov += boost - drop
+		-- Impulso: se abre más cuanto más rápido (hasta CameraBoostFov extra).
+		local speed = glider and glider:GetAttribute("Speed")
+		if type(speed) == "number" then
+			targetFov += math.clamp((speed - Config.ForwardSpeed) * 0.3, 0, Config.CameraBoostFov)
+		end
 	end
 	camera.FieldOfView = GliderMath.approach(camera.FieldOfView, targetFov, Config.CameraFovResponse, dt)
 end

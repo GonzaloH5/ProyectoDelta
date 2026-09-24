@@ -4,7 +4,8 @@
 --                       (se encoge a una tira compacta unos segundos después de empezar cada nivel)
 --   · centro, al empezar cada nivel: tarjeta "LEVEL NN · título" que aparece y se va
 --   · arriba derecha:   cronómetro del recorrido (RunTime)
---   · arriba centro:    corazones del ala (Hearts / MaxHearts): parpadean al perder uno
+--   · arriba centro:    corazones del ala (Hearts / MaxHearts): parpadean al perder uno, y debajo la barra de
+--                       energía de impulso (Energy) con "BOOST!" / "BOOST ×2!" cuando os balanceáis (Boost)
 --   · abajo centro:     la barra del ala con tu marca y la de tu compañero (con flechas de hacia dónde se está
 --                       moviendo cada uno: LeftAxis / RightAxis), zona central, indicadores CLIMB / DIVE / GLIDE
 --                       (LiftInput) y de giro << >> (BalanceInput), y "IN SYNC!" cuando os movéis a la vez
@@ -172,6 +173,36 @@ for index = 1, Config.WingHearts do
 	heartScales[index] = scale
 end
 
+-- Energía de impulso (bajo los corazones).
+local energyTrack = Instance.new("Frame")
+energyTrack.AnchorPoint = Vector2.new(0.5, 0)
+energyTrack.Position = UDim2.new(0.5, 0, 0, 58)
+energyTrack.Size = UDim2.fromOffset(170, 10)
+energyTrack.BackgroundColor3 = Color3.fromRGB(40, 46, 60)
+energyTrack.BorderSizePixel = 0
+energyTrack.Parent = gui
+corner(energyTrack, UDim.new(1, 0))
+stroke(energyTrack, 1.5, 0.4)
+local energyFill = Instance.new("Frame")
+energyFill.Size = UDim2.fromScale(1, 1)
+energyFill.BackgroundColor3 = Color3.fromRGB(90, 210, 255)
+energyFill.BorderSizePixel = 0
+energyFill.Parent = energyTrack
+corner(energyFill, UDim.new(1, 0))
+local boostText = text(gui, Enum.Font.GothamBlack, 22, Color3.fromRGB(90, 210, 255))
+boostText.AnchorPoint = Vector2.new(0.5, 0)
+boostText.Position = UDim2.new(0.5, 0, 0, 72)
+boostText.Size = UDim2.fromOffset(220, 26)
+stroke(boostText, 2, 0.2)
+local boostScale = Instance.new("UIScale")
+boostScale.Parent = boostText
+local energyHint = text(energyTrack, Enum.Font.GothamBold, 11, Color3.fromRGB(200, 210, 225))
+energyHint.AnchorPoint = Vector2.new(1, 0.5)
+energyHint.Position = UDim2.new(0, -8, 0.5, 0)
+energyHint.Size = UDim2.fromOffset(90, 12)
+energyHint.TextXAlignment = Enum.TextXAlignment.Right
+energyHint.Text = "SPACE: PUMP"
+
 -- Barra del ala (abajo centro).
 local barPanel = panel(gui, "Bar")
 barPanel.AnchorPoint = Vector2.new(0.5, 1)
@@ -327,6 +358,7 @@ end
 local syncTime, syncShownUntil, syncCooldownUntil = 0, 0, 0
 local SYNC_HOLD = 0.35 -- s moviéndose a la vez para que cuente
 local SYNC_SHOW, SYNC_COOLDOWN = 1.2, 5
+local lastBoostLevel = 0
 
 local function arrowFor(axis: number): string
 	return if axis < 0 then "◀" elseif axis > 0 then "▶" else ""
@@ -399,6 +431,23 @@ function FlightHud.update(glider: Model?, side: number, dt: number)
 	end
 	heartsRow.Visible = state ~= "Landed"
 
+	-- Energía e impulso.
+	local energy = if glider:GetAttribute("Energy") == nil then 1 else number(glider, "Energy")
+	energyFill.Size = UDim2.fromScale(math.clamp(energy, 0, 1), 1)
+	energyFill.BackgroundColor3 = if energy < 0.2 then Color3.fromRGB(255, 120, 90) else Color3.fromRGB(90, 210, 255)
+	energyTrack.Visible = state ~= "Landed"
+	local boost = number(glider, "Boost")
+	local boostLevel = if boost >= Config.PumpBoostBoth - 0.01 then 2 elseif boost > 0.01 then 1 else 0
+	if boostLevel ~= lastBoostLevel then
+		boostText.Text = if boostLevel == 2 then "BOOST ×2!" elseif boostLevel == 1 then "BOOST!" else ""
+		if boostLevel > lastBoostLevel then
+			boostScale.Scale = 1.5
+			TweenService:Create(boostScale, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+			FlightAudio.play("Boost", if boostLevel == 2 then 1.25 else 1)
+		end
+		lastBoostLevel = boostLevel
+	end
+
 	-- Barra: yo y mi compañero (si hay).
 	local mine = number(glider, if side < 0 then "LeftPosition" else "RightPosition")
 	local theirs = number(glider, if side < 0 then "RightPosition" else "LeftPosition")
@@ -409,8 +458,10 @@ function FlightHud.update(glider: Model?, side: number, dt: number)
 	partnerDot.Position = UDim2.fromScale(0.5 + math.clamp(theirs, -1, 1) * 0.5, 0.5)
 	local myAxis = number(glider, if side < 0 then "LeftAxis" else "RightAxis")
 	local theirAxis = number(glider, if side < 0 then "RightAxis" else "LeftAxis")
-	meArrow.Text = arrowFor(myAxis)
-	partnerArrow.Text = arrowFor(theirAxis)
+	local myPump = glider:GetAttribute(if side < 0 then "LeftPump" else "RightPump") == true
+	local theirPump = glider:GetAttribute(if side < 0 then "RightPump" else "LeftPump") == true
+	meArrow.Text = if myPump then "⇑" .. arrowFor(myAxis) else arrowFor(myAxis)
+	partnerArrow.Text = if theirPump then "⇑" .. arrowFor(theirAxis) else arrowFor(theirAxis)
 
 	-- IN SYNC!
 	local now = os.clock()

@@ -48,6 +48,23 @@ local GliderConfig = {
 	MomentumClimb = 0.08, -- −8 % con la subida máxima
 	SpeedResponse = 1.5, -- rapidez con que el avance vuelve a su objetivo (1/s), también tras un golpe
 
+	-- ── Balanceo (impulso con Espacio / A / botón PUMP) ────────────────
+	-- Balancearse gasta energía (compartida por el dúo) y da avance extra: uno +35 %, los dos a la vez +70 %.
+	-- Más rápido = curvas más abiertas y golpes más fuertes: es un riesgo que se elige.
+	PumpBoostOne = 0.35,
+	PumpBoostBoth = 0.70,
+	BoostResponse = 3, -- rapidez con que se gana el avance extra (1/s)
+	EnergyDrainPerRider = 0.2, -- energía/s que gasta cada uno que se balancea (llena = 1)
+	EnergyRecharge = 0.08, -- energía/s que se recupera sin balancearse
+	EnergyRingBonus = 0.35, -- energía que da cada anillo de impulso
+	RingBurst = 0.2, -- impulso extra durante RingBurstTime al cruzar un anillo
+	RingBurstTime = 1,
+	RiderPumpSwing = 20, -- grados de balanceo del cuerpo al impulsarse
+	RiderPumpRate = 6, -- rad/s del columpio
+
+	-- ── Corrientes del mapa (updraft, downdraft, viento lateral) ───────
+	WindEdge = 25, -- studs de cada borde de la zona en los que la corriente entra y sale suave
+
 	-- ── Sustentación (sale de la separación entre ambos jugadores) ─────
 	-- LiftInput = 0 juntos en el mínimo de separación … 1 cada uno en un extremo
 	MaxFallSpeed = 30, -- studs/s de caída con LiftInput = 0 (ambos en el centro)
@@ -96,7 +113,7 @@ local GliderConfig = {
 	-- ── Contactos (GliderPhysics): tocar algo no es morir ──────────────
 	-- El ala resbala por la superficie. Un golpe fuerte o un roce largo quitan un corazón; sin corazones se pierde
 	-- el ala y se reaparece en el último punto seguro. Suelos y tops nunca quitan corazones.
-	WingHearts = 3,
+	WingHearts = 2,
 	ImpactSpeed = 18, -- studs/s de velocidad CONTRA la superficie que cuentan como golpe (≈17° a 60 studs/s)
 	ScrapeDamageTime = 1.2, -- segundos de roce seguidos que cuestan un corazón
 	InvulnerableTime = 1.5, -- segundos sin daño tras perder un corazón (el ala parpadea)
@@ -161,6 +178,7 @@ local GliderConfig = {
 	CameraVerticalLead = 0.45, -- studs que el punto de mira se adelanta por cada stud/s de subida o bajada
 	CameraMaxFovBoost = 8, -- grados máximos de FOV extra (el picado ya no abre la cámara sin límite)
 	CameraMaxFovDrop = 4, -- grados máximos de FOV menos al subir
+	CameraBoostFov = 12, -- grados máximos de FOV extra con el impulso
 	CameraCollisionRadius = 2, -- studs de separación con paredes y techos entre la cámara y el ala
 	CameraPullInResponse = 20, -- rapidez al acercarse por una pared (alta: nunca se ve a través)
 	CameraReleaseResponse = 3, -- rapidez al volver a su distancia

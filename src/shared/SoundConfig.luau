@@ -22,6 +22,9 @@ local SoundConfig: { [string]: Slot } = {
 	Respawn = { id = "rbxasset://sounds/electronicpingshort.wav", volume = 0.35, pitch = 0.75 }, -- reaparece
 	NearMiss = { id = "rbxasset://sounds/swordlunge.wav", volume = 0.5, pitch = 1.1 }, -- "Close!"
 	InSync = { id = "", volume = 0.4 }, -- los dos se mueven a la vez
+	Boost = { id = "rbxasset://sounds/swordlunge.wav", volume = 0.5, pitch = 0.8 }, -- empieza el impulso (más agudo con ×2)
+	Ring = { id = "rbxasset://sounds/electronicpingshort.wav", volume = 0.5, pitch = 1.8 }, -- anillo de impulso
+	Feather = { id = "rbxasset://sounds/electronicpingshort.wav", volume = 0.35, pitch = 2.4 }, -- pluma recogida
 	Callout = { id = "rbxasset://sounds/electronicpingshort.wav", volume = 0.3, pitch = 2 }, -- aviso del compañero
 
 	-- Logros

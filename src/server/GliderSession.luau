@@ -28,6 +28,7 @@ type Slot = {
 	axis: number, -- -1 A, 0 nada, 1 D (visual, desde la cámara trasera)
 	position: number, -- studs desde el centro de la barra (-izquierda, +derecha), toda la barra
 	slideVelocity: number, -- studs/s
+	pumping: boolean, -- se está balanceando (impulso)
 	inputWindowStart: number,
 	inputCount: number,
 	diedConnection: RBXScriptConnection?,
@@ -70,6 +71,10 @@ export type Session = typeof(setmetatable(
 		windAssist: boolean,
 		assistGoal: Vector3?, -- punto de la línea ideal al que apunta la asistencia (lo pone el controlador)
 		assistStrength: number, -- 0-1 según el nivel (lo pone el controlador)
+		energy: number, -- energía de impulso del dúo (0-1)
+		burstUntil: number, -- empujón de un anillo de impulso hasta este instante (flight.time)
+		rings: number, -- anillos cruzados (contador publicado: efecto en el cliente)
+		windField: Vector3?, -- corriente del mapa en la posición del ala (la pone el controlador)
 		impacts: number, -- golpes (contador publicado: efectos en el cliente)
 		respawns: number, -- reapariciones (contador publicado)
 		crashFrom: CFrame?, -- dónde se perdió el ala (voltereta)
@@ -93,6 +98,7 @@ local function newSlot(side: number): Slot
 		axis = 0,
 		position = lateralFor(side, Config.StartOutward),
 		slideVelocity = 0,
+		pumping = false,
 		inputWindowStart = 0,
 		inputCount = 0,
 		diedConnection = nil,
@@ -304,6 +310,10 @@ function GliderSession.new(
 		windAssist = false,
 		assistGoal = nil,
 		assistStrength = 0,
+		energy = 1,
+		burstUntil = -math.huge,
+		rings = 0,
+		windField = nil,
 		impacts = 0,
 		respawns = 0,
 		crashFrom = nil,
@@ -471,7 +481,9 @@ function GliderSession.handleMessage(self: Session, player: Player, kind: unknow
 		return -- sin spam
 	end
 
-	if kind == "Axis" then
+	if kind == "Pump" then
+		slot.pumping = value == true
+	elseif kind == "Axis" then
 		if type(value) ~= "number" or value ~= value then
 			return -- tipo inválido o NaN
 		end
@@ -485,6 +497,14 @@ function GliderSession.handleMessage(self: Session, player: Player, kind: unknow
 end
 
 -- ── Ciclo de vuelo ────────────────────────────────────────────────────
+
+-- Anillo de impulso: energía y un empujón corto.
+function GliderSession.boostRing(self: Session)
+	self.energy = math.min(1, self.energy + Config.EnergyRingBonus)
+	self.burstUntil = self.flight.time + Config.RingBurstTime
+	self.rings += 1
+	self.glider:SetAttribute("Rings", self.rings)
+end
 
 -- Guarda un checkpoint alcanzado: a partir de ahora el ala reaparece ahí (centro de la isla, a la altura
 -- de vuelo, mirando al siguiente nivel) con los corazones llenos. final = meta: al terminar este vuelo el dúo
@@ -504,6 +524,7 @@ function GliderSession.setCheckpoint(self: Session, index: number, spawn: CFrame
 	self:_setWindAssist(false)
 	self.health.hearts = Config.WingHearts
 	self.health.scrapeTime = 0
+	self.energy = 1 -- la energía se rellena en cada checkpoint
 	self.glider:SetAttribute("Hearts", self.health.hearts)
 	self.glider:SetAttribute("Checkpoint", index)
 	self.glider:SetAttribute("Completed", final)
@@ -558,6 +579,8 @@ function GliderSession.respawn(self: Session, lostWing: boolean?)
 		slot.position = lateralFor(side, Config.StartOutward)
 		slot.slideVelocity = 0
 	end
+	self.energy = math.max(self.energy, 0.5)
+	self.burstUntil = -math.huge
 	if lostWing and not self.completed then
 		self.levelLosses += 1
 		if self.levelLosses >= Config.WindAssistAfterCrashes then
@@ -675,6 +698,9 @@ function GliderSession._updateSlides(self: Session, dt: number)
 			slot.slideVelocity = 0
 		end
 		local swing = -slot.slideVelocity / Config.PlayerSlideSpeed * Config.RiderSlideSwing - roll * Config.RiderRollSwing
+		if slot.pumping and self.flight.state == "Flying" then
+			swing += math.sin(self.flight.time * Config.RiderPumpRate) * Config.RiderPumpSwing -- columpio
+		end
 		RiderRig.setPose(rig, slot.position, swing)
 	end
 end
@@ -724,11 +750,34 @@ function GliderSession._fly(self: Session, dt: number, params: RaycastParams)
 		end
 	end
 
+	-- Impulso: cuántos se balancean (con energía) → avance extra; el anillo suma un empujón corto.
+	local pumpers = 0
+	for _, slot in self.slots do
+		if slot.rig and slot.pumping then
+			pumpers += 1
+		end
+	end
+	if self.energy <= 0 then
+		pumpers = 0
+	end
+	if pumpers > 0 then
+		self.energy = math.max(0, self.energy - Config.EnergyDrainPerRider * pumpers * dt)
+	else
+		self.energy = math.min(1, self.energy + Config.EnergyRecharge * dt)
+	end
+	local boost = if pumpers >= 2 then Config.PumpBoostBoth elseif pumpers == 1 then Config.PumpBoostOne else 0
+	if flight.time < self.burstUntil then
+		boost += Config.RingBurst
+	end
+	physics.boost = if self.completed then 0 else boost
+	flight.pumpers = pumpers
+
 	local result = GliderPhysics.fly(physics, self.health, flight.liftInput, flight.balanceInput, position, self.dims, dt, params, {
 		now = flight.time,
 		assistTurn = assistTurn,
 		landing = self.completed,
 		windVertical = windVertical,
+		wind = self.windField,
 	})
 	if result.landed then
 		self:_land()
@@ -788,6 +837,10 @@ function GliderSession._broadcast(self: Session, dt: number)
 	glider:SetAttribute("Scraping", flight.scraping)
 	glider:SetAttribute("Skimming", flight.skimming)
 	glider:SetAttribute("Invulnerable", flight.time < self.health.invulnerableUntil)
+	glider:SetAttribute("Energy", self.energy)
+	glider:SetAttribute("Boost", physics.boost)
+	glider:SetAttribute("LeftPump", self.slots[LEFT].pumping)
+	glider:SetAttribute("RightPump", self.slots[RIGHT].pumping)
 	if flight.state == "Flying" then
 		self:_updateTrails()
 	end

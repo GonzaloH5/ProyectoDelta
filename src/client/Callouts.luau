@@ -1,6 +1,7 @@
 --!strict
 -- Avisos rápidos al compañero mientras se vuela ("Climb!", "Dive!", "Left!", "Right!", "Nice!"):
---   · teclado 1-5 · mando A (Climb) B (Dive) L1 (Left) R1 (Right) · táctil: botón 💬 y la lista que abre
+--   · teclado 1-5 · mando cruceta ↑ (Climb) ↓ (Dive) L1 (Left) R1 (Right) B (Nice) · táctil: botón 💬
+--     (el botón A del mando es el balanceo)
 --   · el servidor los reenvía a los dos del ala ("Callout"); el del compañero sale grande sobre la barra y en
 --     un bocadillo encima de su cabeza, el propio sale pequeño como confirmación.
 
@@ -20,7 +21,7 @@ local PANEL = Color3.fromRGB(18, 22, 30)
 local ME_COLOR = Color3.fromRGB(255, 205, 50)
 local PARTNER_COLOR = Color3.fromRGB(235, 240, 255)
 local KEYS = { Enum.KeyCode.One, Enum.KeyCode.Two, Enum.KeyCode.Three, Enum.KeyCode.Four, Enum.KeyCode.Five }
-local PAD = { [Enum.KeyCode.ButtonA] = 1, [Enum.KeyCode.ButtonB] = 2, [Enum.KeyCode.ButtonL1] = 3, [Enum.KeyCode.ButtonR1] = 4 }
+local PAD = { [Enum.KeyCode.DPadUp] = 1, [Enum.KeyCode.DPadDown] = 2, [Enum.KeyCode.ButtonL1] = 3, [Enum.KeyCode.ButtonR1] = 4, [Enum.KeyCode.ButtonB] = 5 }
 
 local player = Players.LocalPlayer :: Player
 

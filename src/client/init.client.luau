@@ -38,6 +38,7 @@ local gliderFolder = workspace:WaitForChild(Config.GliderFolderName)
 local mountedSide = 0 -- 0 no montado, -1 slot 1, 1 slot 2
 local mountedGlider: Model? = nil
 local sentAxis = 0
+local sentPump = false
 
 remote.OnClientEvent:Connect(function(kind: unknown, data: unknown)
 	if kind == "Checkpoint" and type(data) == "table" then
@@ -128,6 +129,7 @@ local function unmount()
 	mountedGlider = nil
 	mountedSide = 0
 	sentAxis = 0
+	sentPump = false
 	if controls then
 		controls:Enable()
 	end
@@ -160,6 +162,11 @@ RunService:BindToRenderStep("GliderClient", Enum.RenderPriority.Camera.Value + 1
 		if axis ~= sentAxis then
 			sentAxis = axis
 			remote:FireServer("Axis", axis)
+		end
+		local pump = InputAxis.pump()
+		if pump ~= sentPump then
+			sentPump = pump
+			remote:FireServer("Pump", pump)
 		end
 		GliderCamera.update(root :: BasePart, dt)
 	end

@@ -3,6 +3,7 @@
 --   · teclado: A/D o flechas
 --   · mando: gatillos L2 = izquierda, R2 = derecha (también cruceta y stick izquierdo)
 --   · táctil: dos botones grandes ◀ ▶ abajo a los lados, solo mientras se vuela
+-- Balanceo (impulso): Espacio · botón A del mando · botón táctil PUMP (InputAxis.pump).
 -- Si se pulsan los dos lados a la vez, se anulan (0), igual que con A+D.
 
 local Players = game:GetService("Players")
@@ -16,7 +17,7 @@ local TRIGGER_THRESHOLD = 0.3 -- cuánto hay que apretar el gatillo
 local STICK_THRESHOLD = 0.5
 local IDLE_COLOR, PRESSED_COLOR = Color3.fromRGB(25, 30, 40), Color3.fromRGB(255, 205, 50)
 
-local touch = { left = false, right = false }
+local touch = { left = false, right = false, pump = false }
 
 -- ── Botones táctiles ──────────────────────────────────────────────────
 
@@ -75,6 +76,12 @@ end
 
 touchButton("left", "<")
 touchButton("right", ">")
+local pumpButton = touchButton("pump", "⇑")
+pumpButton.Name = "Pump"
+pumpButton.AnchorPoint = Vector2.new(1, 1)
+pumpButton.Position = UDim2.new(1, -28, 1, -180)
+pumpButton.Size = UDim2.fromOffset(104, 104)
+pumpButton.TextSize = 44
 gui.Parent = (Players.LocalPlayer :: Player):WaitForChild("PlayerGui")
 
 -- ── Lectura ───────────────────────────────────────────────────────────
@@ -111,11 +118,21 @@ function InputAxis.read(): number
 	return (if right then 1 else 0) - (if left then 1 else 0)
 end
 
+-- ¿Se está balanceando? (Espacio, A del mando o el botón táctil).
+function InputAxis.pump(): boolean
+	if UserInputService:GetFocusedTextBox() then
+		return false
+	end
+	return UserInputService:IsKeyDown(Enum.KeyCode.Space)
+		or touch.pump
+		or (UserInputService:GetGamepadConnected(Enum.UserInputType.Gamepad1) and UserInputService:IsGamepadButtonDown(Enum.UserInputType.Gamepad1, Enum.KeyCode.ButtonA))
+end
+
 -- Botones táctiles visibles solo mientras se vuela y en dispositivos táctiles.
 function InputAxis.setEnabled(enabled: boolean)
 	gui.Enabled = enabled and UserInputService.TouchEnabled
 	if not enabled then
-		touch.left, touch.right = false, false
+		touch.left, touch.right, touch.pump = false, false, false
 	end
 end
 
