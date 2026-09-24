@@ -46,6 +46,7 @@ local sessions: { [Session]: true } = {}
 local sessionOf: { [Player]: Session } = {}
 local lastPosition: { [Session]: Vector3 } = {} -- posición del ala en el paso anterior (cruce de checkpoints)
 local wasFlying: { [Session]: true } = {} -- volaba en el paso anterior (para contar choques)
+local inCountdown: { [Session]: true } = {} -- en cuenta atrás en el paso anterior (para cargar la zona al empezarla)
 local devRuns: { [Session]: true } = {} -- vuelos de prueba (DevStartLevel): no cuentan para las estadísticas
 local nextId = 0
 
@@ -73,11 +74,11 @@ local function onSessionFinished(session: Session, reason: GliderSession.FinishR
 	sessions[session] = nil
 	lastPosition[session] = nil
 	wasFlying[session] = nil
+	inCountdown[session] = nil
 	devRuns[session] = nil
 	for _, player in session.members do
 		if sessionOf[player] == session then
 			sessionOf[player] = nil
-			LevelStreaming.clear(player)
 		end
 	end
 	if reason == "empty" then
@@ -149,7 +150,6 @@ local function startSession(players: { Player })
 	publishLevel(session)
 	for _, player in duo do
 		sessionOf[player] = session
-		LevelStreaming.setWindow(player, session.checkpoint)
 		if not devRuns[session] then
 			PlayerStats.runStarted(player)
 		end
@@ -171,7 +171,6 @@ local function reachCheckpoint(session: Session, checkpoint: Checkpoints.Checkpo
 	end
 	local personalBest: { [Player]: boolean } = {}
 	for _, player in riders do
-		LevelStreaming.setWindow(player, checkpoint.index)
 		remote:FireClient(player, "Checkpoint", info)
 		if counts then
 			-- Solo récords: el siguiente vuelo vuelve a empezar en la salida.
@@ -263,6 +262,18 @@ RunService.Heartbeat:Connect(function(rawDt)
 		else
 			wasFlying[session] = nil
 		end
+		-- Empieza una cuenta atrás (despegue o reaparición en el checkpoint): el ala acaba de saltar de sitio,
+		-- se pide cargar esa zona mientras cuenta.
+		if session.flight.state == "Countdown" then
+			if not inCountdown[session] then
+				for _, player in session:riders() do
+					LevelStreaming.prepare(player, session.respawnCFrame.Position)
+				end
+			end
+			inCountdown[session] = true
+		else
+			inCountdown[session] = nil
+		end
 		if flying then
 			local position = session.root.Position
 			local previous = lastPosition[session]
@@ -291,5 +302,4 @@ Players.PlayerRemoving:Connect(function(player)
 	end
 	sessionOf[player] = nil
 	messageWindow[player] = nil
-	LevelStreaming.clear(player)
 end)

@@ -121,9 +121,8 @@ end
 local function newModel(parent: Instance, name: string): Model
 	local model = Instance.new("Model")
 	model.Name = name
-	-- Llega entero (como Atomic) y además el servidor puede fijarlo por jugador: LevelStreaming mantiene
-	-- cargados solo los niveles cercanos al dúo (los ya superados y los muy lejanos no).
-	model.ModelStreamingMode = Enum.ModelStreamingMode.PersistentPerPlayer
+	-- Streaming por distancia, pieza a pieza (LevelStreaming): un nivel entero de golpe provoca tirones.
+	model.ModelStreamingMode = Enum.ModelStreamingMode.Default
 	model.Parent = parent
 	return model
 end

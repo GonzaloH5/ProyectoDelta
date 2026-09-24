@@ -153,12 +153,16 @@ require(game.ServerScriptService.Glider.DevTools.MapDresser:Clone()).audit(works
 | `src/client` | `StarterPlayerScripts.GliderClient` | `InputAxis` (teclado/mando/táctil), `FlightHud`, `GliderCamera`, `ResetButton`, `LobbyButton`, `CheckpointBanner`, `UiScale`, `OtherDuos` |
 | `tools/sim` | — (no se sincroniza) | Imitación de Roblox para probar el mapa y el FlightTester sin Studio (ver abajo) |
 
-## Rendimiento: ventana de niveles cargados
+## Rendimiento: carga del mapa (streaming)
 
-Con StreamingEnabled, los niveles e islas del mapa son `PersistentPerPlayer` y `LevelStreaming` (servidor) fija a
-cada jugador en vuelo solo su ventana: la isla de su último checkpoint c y los niveles c+1 … c+4 con sus islas
-(en el nivel 3 se carga hasta el 6). Lo superado y lo lejano no se fija y el streaming lo descarga o no lo envía.
-Al volver al lobby se suelta todo. La colisión es del servidor, que siempre tiene el mapa entero.
+Con StreamingEnabled, los niveles e islas del mapa son modelos con `ModelStreamingMode = Default`: cada cliente
+recibe sus piezas poco a poco, por distancia, nunca un nivel entero de golpe. (Con `PersistentPerPlayer` o
+`Atomic`, al entrar en radio llegaba el modelo completo —1.000-1.500 piezas con el vestido— y el cliente daba un
+tirón al acercarse al mapa desde el lobby y en cada checkpoint.) `LevelStreaming.load` pasa a `Default` los
+modelos de un mapa guardado antes de este cambio; regenerar con `MapBuilder` ya los crea así.
+Cuando el ala salta de sitio (despegue o reaparición en el checkpoint), `LevelStreaming.prepare` pide cargar la
+zona de destino (`RequestStreamAroundAsync`) durante la cuenta atrás. La colisión es del servidor, que siempre
+tiene el mapa entero.
 Recomendado en Workspace: `StreamingTargetRadius` ≈ 1024, `StreamingMinRadius` ≈ 256, `StreamOutBehavior = Opportunistic`.
 
 ## Estadísticas guardadas (DataStore)
