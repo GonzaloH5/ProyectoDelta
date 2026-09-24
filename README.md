@@ -113,7 +113,7 @@ require(game.ServerScriptService.Glider.DevTools.MapDresser:Clone()).audit(works
 | Carpeta | En Studio | Contenido |
 |---|---|---|
 | `src/shared` | `ReplicatedStorage.Glider` | `GliderConfig` (todos los parámetros), `GliderMath`, `GliderRemote` |
-| `src/server` | `ServerScriptService.Glider` | `GliderController` (sesiones, lobby, checkpoints), `GliderSession` (un ala + su dúo + vuelo + reaparición), `Checkpoints` (islas de descanso y meta), `Lobby` (plataformas), `RiderRig` (colgar jugadores + IK), `CollisionGroups`, `DevTools` (MapBuilder, MapDresser, Biomes, LobbyBuilder, LowPoly, FlightTester: solo edición) |
+| `src/server` | `ServerScriptService.Glider` | `GliderController` (sesiones, lobby, checkpoints), `GliderSession` (un ala + su dúo + vuelo + reaparición), `Checkpoints` (islas de descanso y meta), `Lobby` (plataformas), `RiderRig` (colgar jugadores + IK), `CollisionGroups`, `PlayerStats` (récords guardados), `LevelStreaming`, `DevTools` (MapBuilder, MapDresser, Biomes, LobbyBuilder, LowPoly, FlightTester: solo edición) |
 | `src/client` | `StarterPlayerScripts.GliderClient` | `InputAxis` (teclado/mando/táctil), `FlightHud`, `GliderCamera`, `ResetButton`, `LobbyButton`, `CheckpointBanner`, `UiScale`, `OtherDuos` |
 
 ## Rendimiento: ventana de niveles cargados
@@ -123,6 +123,25 @@ cada jugador en vuelo solo su ventana: la isla de su último checkpoint c y los 
 (en el nivel 3 se carga hasta el 6). Lo superado y lo lejano no se fija y el streaming lo descarga o no lo envía.
 Al volver al lobby se suelta todo. La colisión es del servidor, que siempre tiene el mapa entero.
 Recomendado en Workspace: `StreamingTargetRadius` ≈ 1024, `StreamingMinRadius` ≈ 256, `StreamOutBehavior = Opportunistic`.
+
+## Estadísticas guardadas (DataStore)
+
+`PlayerStats` (servidor) guarda por jugador solo **récords y contadores**, nunca por dónde iba: cada vuelo empieza
+siempre en la salida.
+
+| Dato | Qué es |
+|---|---|
+| `HighestLevel` | mayor nivel superado (checkpoint más alto cruzado; el total = llegó a la meta) |
+| `BestTime` | mejor tiempo del recorrido completo (cronómetro `RunTime`, choques incluidos) |
+| `Completions` · `Runs` · `Crashes` | recorridos terminados · vuelos empezados · choques |
+
+- Se ven en la lista de jugadores (`leaderstats`: **Level** y **Best**) y como atributos del `Player` para la interfaz.
+- Los vuelos de prueba con `DevStartLevel` no cuentan.
+- Se guarda al salir, cada 2 minutos si hay cambios y al cerrar el servidor. El guardado fusiona con lo que ya hay
+  (máximo, mínimo y suma), así que no se pierde nada aunque la carga falle o el jugador esté en dos servidores.
+- DataStore `PlayerStats_v1`, clave `Player_<UserId>`.
+- Para probarlo en Studio: *Game Settings → Security → Enable Studio Access to API Services* (el place tiene que
+  estar publicado). Sin eso, el juego funciona igual y solo avisa de que no guarda.
 
 ## Controles e interfaz
 

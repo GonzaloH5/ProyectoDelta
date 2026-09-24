@@ -22,9 +22,11 @@ local CollisionGroups = require(script.Parent.CollisionGroups)
 local GliderSession = require(script.Parent.GliderSession)
 local LevelStreaming = require(script.Parent.LevelStreaming)
 local Lobby = require(script.Parent.Lobby)
+local PlayerStats = require(script.Parent.PlayerStats)
 local remote = Shared:WaitForChild("GliderRemote") :: RemoteEvent
 
 CollisionGroups.setup()
+PlayerStats.start()
 Checkpoints.load(workspace:FindFirstChild("Map"))
 LevelStreaming.load(workspace:FindFirstChild("Map"))
 
@@ -41,6 +43,8 @@ type Session = GliderSession.Session
 local sessions: { [Session]: true } = {}
 local sessionOf: { [Player]: Session } = {}
 local lastPosition: { [Session]: Vector3 } = {} -- posición del ala en el paso anterior (cruce de checkpoints)
+local wasFlying: { [Session]: true } = {} -- volaba en el paso anterior (para contar choques)
+local devRuns: { [Session]: true } = {} -- vuelos de prueba (DevStartLevel): no cuentan para las estadísticas
 local nextId = 0
 
 -- Sesión en la que el jugador sigue colgado (si murió o se soltó, ya no cuenta).
@@ -66,6 +70,8 @@ end
 local function onSessionFinished(session: Session, reason: GliderSession.FinishReason, riders: { Player })
 	sessions[session] = nil
 	lastPosition[session] = nil
+	wasFlying[session] = nil
+	devRuns[session] = nil
 	for _, player in session.members do
 		if sessionOf[player] == session then
 			sessionOf[player] = nil
@@ -135,10 +141,16 @@ local function startSession(players: { Player })
 	local launchAt, startCheckpoint = devLaunchPoint()
 	local session = GliderSession.new(nextId, template, gliderFolder, duo, onSessionFinished, launchAt, startCheckpoint)
 	sessions[session] = true
+	if startCheckpoint > 0 then
+		devRuns[session] = true
+	end
 	publishLevel(session)
 	for _, player in duo do
 		sessionOf[player] = session
 		LevelStreaming.setWindow(player, session.checkpoint)
+		if not devRuns[session] then
+			PlayerStats.runStarted(player)
+		end
 	end
 end
 
@@ -146,9 +158,17 @@ end
 local function reachCheckpoint(session: Session, checkpoint: Checkpoints.Checkpoint)
 	session:setCheckpoint(checkpoint.index, checkpoint.spawn, checkpoint.final)
 	publishLevel(session)
+	local counts = not devRuns[session]
 	for _, player in session:riders() do
 		LevelStreaming.setWindow(player, checkpoint.index)
 		remote:FireClient(player, "Checkpoint", checkpoint.info)
+		if counts then
+			-- Solo récords: el siguiente vuelo vuelve a empezar en la salida.
+			PlayerStats.levelCleared(player, checkpoint.index)
+			if checkpoint.final then
+				PlayerStats.courseCompleted(player, session.runTime)
+			end
+		end
 	end
 end
 
@@ -206,7 +226,19 @@ RunService.Heartbeat:Connect(function(rawDt)
 			session.glider:SetAttribute("LevelProgress", Checkpoints.progress(levelOf(session), session.root.Position))
 		end
 		-- Checkpoints: tramo recorrido desde el paso anterior (solo en vuelo; tras reaparecer se empieza de cero).
-		if session.flight.state == "Flying" then
+		-- Choque: pasa de volar a "Ended" sin haber cruzado la meta (aterrizar tras la meta no es choque).
+		local flying = session.flight.state == "Flying"
+		if wasFlying[session] and session.flight.state == "Ended" and not session.completed and not devRuns[session] then
+			for _, player in session:riders() do
+				PlayerStats.crashed(player)
+			end
+		end
+		if flying then
+			wasFlying[session] = true
+		else
+			wasFlying[session] = nil
+		end
+		if flying then
 			local position = session.root.Position
 			local previous = lastPosition[session]
 			local checkpoint = previous and Checkpoints.crossed(previous, position, session.checkpoint)
