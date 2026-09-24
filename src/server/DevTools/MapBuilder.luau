@@ -1572,14 +1572,77 @@ local function buildValley(map, name, frames)
 	return model
 end
 
-function MapBuilder.build(options): string
-	local dress = not (options and options.dress == false)
+-- ── Tutorial: recorrido corto junto al mundo principal ───────────────────
+-- Tres tramos muy fáciles con un bot de compañero (TutorialBot): subir, bajar y girar. Va en Map.Tutorial,
+-- lejos del lobby y de las filas del recorrido. coach = indicaciones por tramo, en fracciones de la Route:
+-- { from, to, hint, lean? } (lean = -1 izquierda / +1 derecha: el bot se inclina hacia ese lado; sin lean,
+-- el bot hace de espejo del jugador y la subida o bajada depende de él).
+local TUTORIAL_START = Vector3.new(0, CRUISE, 4000)
+local TUTORIAL_LEVELS = {
+	{ -- T1: subir por encima de una loma baja.
+		title = "Climb",
+		biome = "Pradera",
+		width = 320,
+		height = 230,
+		path = { { kind = "straight", length = 1000 } },
+		features = function(c)
+			c.ridge(560, 10, 14, 20)
+		end,
+		coach = {
+			{ 0, 0.62, "Both move OUT to climb over the hill!" },
+			{ 0.62, 1, "Back to the CENTER to glide down" },
+		},
+	},
+	{ -- T2: bajar por debajo de una viga.
+		title = "Dive",
+		biome = "Pradera",
+		width = 320,
+		height = 230,
+		path = { { kind = "straight", length = 900 } },
+		features = function(c)
+			c.lintel(470, 12)
+		end,
+		coach = {
+			{ 0, 0.55, "Both move IN to the center to dive under the beam!" },
+			{ 0.55, 1, "Move OUT again to climb back up" },
+		},
+	},
+	{ -- T3: girar a la izquierda y a la derecha inclinándose los dos hacia el mismo lado.
+		title = "Turn",
+		biome = "Pradera",
+		width = 320,
+		height = 230,
+		path = {
+			{ kind = "straight", length = 250 },
+			{ kind = "arc", angle = 35, radius = 450 },
+			{ kind = "straight", length = 250 },
+			{ kind = "arc", angle = -35, radius = 450 },
+			{ kind = "straight", length = 250 },
+		},
+		features = function(c)
+			c.guide(250 + 450 * math.rad(35) / 2, 0, 0)
+			c.guide(250 + 450 * math.rad(35) + 250 + 450 * math.rad(35) / 2, 0, 0)
+		end,
+		coach = {
+			{ 0.1, 0.42, "Lean LEFT together to turn left!", -1 },
+			{ 0.42, 0.52, "Back to the center" },
+			{ 0.52, 0.84, "Lean RIGHT together to turn right!", 1 },
+			{ 0.84, 1, "Nice! Keep it straight to the finish" },
+		},
+	},
+}
+MapBuilder.TUTORIAL_LEVELS = TUTORIAL_LEVELS
+
+-- Genera un recorrido completo dentro de `root`: StartIsland → LevelNN → RestIslandNN … → FinishIsland, con
+-- DevSpawns. options: dress (vestir), seedBase (semilla del vestido), moveTemplate (llevar la AlaDelta al
+-- despegue: solo el recorrido principal), dressUpTo (vestir hasta ese nivel). Devuelve el resumen y el total.
+local function buildCourse(root: Instance, levels, startPos: Vector3, options): ({ string }, number, { string })
 	local dressed = {}
-	-- Viste un nivel/valle con el bioma del nivel biomeLevel (el de su capítulo o el forzado en LEVELS).
+	-- Viste un nivel/valle con el bioma del nivel biomeLevel (el de su capítulo o el forzado en la tabla).
 	-- index = posición en el recorrido (0 = StartIsland): decide si ya toca vestirlo y fija la semilla.
 	-- Los valles usan el bioma del nivel SIGUIENTE: el valle de cambio de capítulo ya anuncia el bioma nuevo.
 	local function dressModel(model: Model, index: number, biomeLevel: number)
-		local spec = LEVELS[biomeLevel]
+		local spec = levels[biomeLevel]
 		local biome = Biomes.get(spec and spec.biome) or Biomes.chapter(biomeLevel)
 		if not biome then
 			return
@@ -1588,49 +1651,51 @@ function MapBuilder.build(options): string
 		-- Para la pantalla de checkpoint (Checkpoints.luau): nombre visible y color de acento del bioma.
 		model:SetAttribute("BiomeTitle", biome.title or biome.name)
 		model:SetAttribute("BiomeColor", biome.accent)
-		if dress and index <= DRESS_LEVELS then
-			local added = MapDresser.dress(model, biome, { wallT = WALL_T, rim = RIM, seed =20260922 + index * 7919 + #model.Name, index = index })
+		if options.dress and index <= options.dressUpTo then
+			local added = MapDresser.dress(model, biome, { wallT = WALL_T, rim = RIM, seed = options.seedBase + index * 7919 + #model.Name, index = index })
 			table.insert(dressed, string.format("%s +%d", model.Name, added))
 		end
 	end
 
-	local old = workspace:FindFirstChild("Map")
-	if old then
-		old:Destroy()
-	end
-	local map = Instance.new("Folder")
-	map.Name = "Map"
-	map:SetAttribute("DevStartLevel", 0) -- 1-50 = despegar directamente en ese nivel (pruebas)
-	map.Parent = workspace
-	local devSpawns = newFolder(map, "DevSpawns")
+	local devSpawns = newFolder(root, "DevSpawns")
 	local summary = {}
 
 	-- Valle inicial: acantilado cerrado detrás, StartIsland y despegue en su borde.
-	local startFrames = tracePath(START, 0, VALLEY.width, 0, { { kind = "straight", length = VALLEY.length } })
-	local start = buildValley(map, "StartIsland", startFrames)
+	local startFrames = tracePath(startPos, 0, VALLEY.width, 0, { { kind = "straight", length = VALLEY.length } })
+	local start = buildValley(root, "StartIsland", startFrames)
 	cliffFace(start, "BackWall", startFrames[1], nil, VALLEY_EXTENTS)
 	local launch = frameAt(startFrames, LAUNCH_S)
-	island(start, launch.pos - Vector3.new(0, 14, 0) - forwardOf(0) * 115, 0, 230, 280, BEACON_COLORS[1], CRUISE)
+	island(start, launch.pos - Vector3.new(0, 14, 0) - forwardOf(0) * 115, 0, 230, 280, BEACON_COLORS[1], startPos.Y)
 	marker(start, "LaunchPoint", frameCFrame(launch))
 	marker(devSpawns, "Start", frameCFrame(launch))
-	local template = workspace:FindFirstChild("AlaDelta")
-	local bar = template and template:FindFirstChild("Agarre")
-	if template and bar then
-		template:PivotTo(template:GetPivot() + (launch.pos - bar.Position))
+	if options.moveTemplate then
+		local template = workspace:FindFirstChild("AlaDelta")
+		local bar = template and template:FindFirstChild("Agarre")
+		if template and bar then
+			template:PivotTo(template:GetPivot() + (launch.pos - bar.Position))
+		end
 	end
 	dressModel(start, 0, 1)
 
 	local cursor = startFrames[#startFrames]
 	local total = VALLEY.length
-	for index, spec in LEVELS do
+	for index, spec in levels do
 		local levelName = string.format("Level%02d", index)
 		local frames, marks = tracePath(cursor.pos, cursor.heading, spec.width, spec.height, spec.path)
 		local first, last = frames[1], frames[#frames]
-		local level = newModel(map, levelName)
+		local level = newModel(root, levelName)
 		level:SetAttribute("Title", spec.title)
 		level:SetAttribute("Length", math.floor(last.s))
 		level:SetAttribute("Width", spec.width)
 		level:SetAttribute("Height", spec.height)
+		if spec.coach then
+			-- Indicaciones del tutorial para TutorialBot: "desde|hasta|lado|texto;…" (fracciones de la Route).
+			local cues = {}
+			for _, cue in spec.coach do
+				table.insert(cues, string.format("%g|%g|%d|%s", cue[1], cue[2], cue[4] or 0, cue[3]))
+			end
+			level:SetAttribute("Coach", table.concat(cues, ";"))
+		end
 
 		buildTube(level, frames, CORRIDOR)
 		cliffFace(level, "EntranceFace", first, { w = first.width, h = first.height }, VALLEY_EXTENTS)
@@ -1650,9 +1715,9 @@ function MapBuilder.build(options): string
 		total += last.s
 
 		-- Pausa: valle abierto con isla (o la meta tras el último nivel).
-		if index < #LEVELS then
+		if index < #levels then
 			local valleyFrames = tracePath(last.pos, last.heading, VALLEY.width, 0, { { kind = "straight", length = VALLEY.length } })
-			local rest = buildValley(map, string.format("RestIsland%02d", index), valleyFrames)
+			local rest = buildValley(root, string.format("RestIsland%02d", index), valleyFrames)
 			rest:SetAttribute("Index", index)
 			local middle = frameAt(valleyFrames, VALLEY.length / 2)
 			island(rest, middle.pos - Vector3.new(0, 60, 0), middle.heading, 200, 220, BEACON_COLORS[(index - 1) % #BEACON_COLORS + 1], middle.pos.Y)
@@ -1661,7 +1726,7 @@ function MapBuilder.build(options): string
 			total += VALLEY.length
 		else
 			local finishFrames = tracePath(last.pos, last.heading, VALLEY.width, 0, { { kind = "straight", length = 900 } })
-			local finish = buildValley(map, "FinishIsland", finishFrames)
+			local finish = buildValley(root, "FinishIsland", finishFrames)
 			local gate = frameAt(finishFrames, 150)
 			ring(finish, "FinishGate", "Finish", frameCFrame(gate), 170, 120, 10, 10)
 			marker(finish, "FinishLine", frameCFrame(gate), Vector3.new(170, 120, 4))
@@ -1677,6 +1742,28 @@ function MapBuilder.build(options): string
 			total += 900
 		end
 	end
+	return summary, total, dressed
+end
+
+-- Genera Workspace.Map: el recorrido principal (50 niveles) y, dentro, Map.Tutorial.
+-- options.dress = false → blockout puro.
+function MapBuilder.build(options): string
+	local dress = not (options and options.dress == false)
+	local old = workspace:FindFirstChild("Map")
+	if old then
+		old:Destroy()
+	end
+	local map = Instance.new("Folder")
+	map.Name = "Map"
+	map:SetAttribute("DevStartLevel", 0) -- 1-50 = despegar directamente en ese nivel (pruebas)
+	map.Parent = workspace
+
+	local summary, total, dressed = buildCourse(map, LEVELS, START, { dress = dress, dressUpTo = DRESS_LEVELS, seedBase = 20260922, moveTemplate = true })
+
+	local tutorial = Instance.new("Folder")
+	tutorial.Name = "Tutorial"
+	tutorial.Parent = map
+	local tutorialSummary, tutorialTotal = buildCourse(tutorial, TUTORIAL_LEVELS, TUTORIAL_START, { dress = dress, dressUpTo = math.huge, seedBase = 7310, moveTemplate = false })
 
 	local parts = 0
 	for _, d in map:GetDescendants() do
@@ -1685,6 +1772,7 @@ function MapBuilder.build(options): string
 		end
 	end
 	table.insert(summary, string.format("Total ~%.0f studs (~%.1f min a 60 studs/s) · %d piezas", total, total / 60 / 60, parts))
+	table.insert(summary, string.format("Tutorial: %s · ~%.0f studs", (table.concat(tutorialSummary, " | "):gsub("%s+", " ")), tutorialTotal))
 	if #dressed > 0 then
 		table.insert(summary, "Vestido: " .. table.concat(dressed, " · "))
 	end

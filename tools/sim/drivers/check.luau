@@ -36,5 +36,6 @@ if ARGS.runAll then
 	print(FlightTester.runAll())
 else
 	print(FlightTester.checkRules(ARGS.from, ARGS.to))
+	print(FlightTester.checkTutorial())
 end
 print(string.format("[sim] pruebas en %.1f s", realClock() - t0))

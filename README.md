@@ -60,6 +60,7 @@ En Studio, modo edición, barra de comandos:
 require(game.ServerScriptService.Glider.DevTools.MapBuilder:Clone()).build()      -- regenera el mapa
 require(game.ServerScriptService.Glider.DevTools.FlightTester:Clone()).runAll()   -- piloto automático (novato / tranquilo / completo)
 require(game.ServerScriptService.Glider.DevTools.FlightTester:Clone()).checkRules() -- regla de dificultad (from, to opcionales)
+require(game.ServerScriptService.Glider.DevTools.FlightTester:Clone()).checkTutorial() -- tutorial: novato y tranquilo ≥ 8
 ```
 
 **Regla de dificultad** (`FlightTester.RULES`, la comprueba `checkRules()`): cada tramo exige que ciertos pilotos
@@ -149,8 +150,8 @@ require(game.ServerScriptService.Glider.DevTools.MapDresser:Clone()).audit(works
 | Carpeta | En Studio | Contenido |
 |---|---|---|
 | `src/shared` | `ReplicatedStorage.Glider` | `GliderConfig` (todos los parámetros), `GliderMath`, `GliderRemote` |
-| `src/server` | `ServerScriptService.Glider` | `GliderController` (sesiones, lobby, checkpoints), `GliderSession` (un ala + su dúo + vuelo + reaparición), `Checkpoints` (islas de descanso y meta), `Lobby` (plataformas), `RiderRig` (colgar jugadores + IK), `CollisionGroups`, `PlayerStats` (récords guardados), `DuoLeaderboard` (clasificación de dúos y tablón), `LevelStreaming`, `DevTools` (MapBuilder, MapDresser, Biomes, LobbyBuilder, LowPoly, FlightTester: solo edición) |
-| `src/client` | `StarterPlayerScripts.GliderClient` | `InputAxis` (teclado/mando/táctil), `FlightHud`, `GliderCamera`, `ResetButton`, `LobbyButton`, `CheckpointBanner`, `UiScale`, `OtherDuos` |
+| `src/server` | `ServerScriptService.Glider` | `GliderController` (sesiones, lobby, checkpoints), `GliderSession` (un ala + su dúo + vuelo + reaparición), `Checkpoints` (islas de descanso y meta), `Lobby` (plataformas), `RiderRig` (colgar jugadores + IK), `CollisionGroups`, `PlayerStats` (récords guardados), `DuoLeaderboard` (clasificación de dúos y tablón), `TutorialBot` (bot compañero del tutorial), `LevelStreaming`, `DevTools` (MapBuilder, MapDresser, Biomes, LobbyBuilder, LowPoly, FlightTester: solo edición) |
+| `src/client` | `StarterPlayerScripts.GliderClient` | `InputAxis` (teclado/mando/táctil), `FlightHud`, `GliderCamera`, `ResetButton`, `LobbyButton`, `CheckpointBanner`, `TutorialHints` (oferta, indicaciones y SKIP del tutorial), `UiScale`, `OtherDuos` |
 | `tools/sim` | — (no se sincroniza) | Imitación de Roblox para probar el mapa y el FlightTester sin Studio (ver abajo) |
 
 ## Rendimiento: carga del mapa (streaming)
@@ -183,6 +184,23 @@ siempre en la salida.
 - DataStore `PlayerStats_v1`, clave `Player_<UserId>`.
 - Para probarlo en Studio: *Game Settings → Security → Enable Studio Access to API Services* (el place tiene que
   estar publicado). Sin eso, el juego funciona igual y solo avisa de que no guarda.
+
+## Tutorial con bot
+
+- **Solo la primera vez** que alguien entra (sin `TutorialDone` en `PlayerStats`), a los pocos segundos de aparecer en el
+  lobby sale una ventana: *First time flying?* → **PLAY TUTORIAL** / **NO THANKS**. Responda lo que responda, se
+  guarda `TutorialDone` y no vuelve a salir. (En Studio sin API Services no se guarda: sale en cada Play.)
+- **Recorrido** `Map.Tutorial` (lo genera `MapBuilder.build()`, lejos del lobby y del recorrido): tres tramos cortos
+  vestidos de Pradera, cada uno con su checkpoint: **Climb** (una loma), **Dive** (una viga) y **Turn** (izquierda y
+  derecha). Si chocas, repites el tramo. Al terminar: "TUTORIAL COMPLETE!" y vuelves al lobby.
+- **Bot compañero** (`TutorialBot`): un personaje R15 colgado en el otro extremo de la barra.
+  - Al subir y bajar hace de **espejo**: la maniobra depende de ti.
+  - En los giros se **inclina** hacia el lado de la curva y tú tienes que acompañarlo.
+- **Indicaciones grandes en pantalla** (`TutorialHints`, atributo `TutorialHint` del ala) y botón **SKIP TUTORIAL**.
+- No cuenta para estadísticas, choques ni clasificación. La imagen de tutorial antigua queda desactivada
+  (`ShowTutorialOnJoin = false`).
+- Las indicaciones de cada tramo (`coach` en `TUTORIAL_LEVELS` de `MapBuilder`) se guardan en el atributo `Coach`
+  del nivel: el juego no necesita los DevTools.
 
 ## Clasificación de dúos (tablón del lobby)
 
@@ -233,6 +251,7 @@ python3 tools/sim/run.py drivers/pilots.luau from=11     # los 3 pilotos en cada
 python3 tools/sim/run.py drivers/audit.luau              # regla de oro (MapDresser.audit) en todos los niveles
 python3 tools/sim/run.py drivers/layout.luau             # trazado: extensión, separación entre filas y SVG
 python3 tools/sim/run.py drivers/leaderboard.luau        # DuoLeaderboard y PlayerStats con DataStores falsos
+python3 tools/sim/run.py drivers/tutorial.luau           # Map.Tutorial y el bot (indicaciones, espejo, giros)
 python3 tools/sim/run.py drivers/selftest.luau           # pruebas de la propia imitación
 ```
 

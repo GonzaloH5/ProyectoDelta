@@ -3,6 +3,7 @@
 -- (Map.FinishIsland: línea del arco de meta). Un ala alcanza un checkpoint cuando CRUZA el plano de su zona hacia
 -- adelante (test de segmento: no se lo salta aunque el servidor vaya a tirones).
 -- El índice de un checkpoint = número de niveles superados al llegar (RestIsland03 → 3, meta → total).
+-- Cada recorrido (el principal en Map, el tutorial en Map.Tutorial) es un objeto Course: Checkpoints.new(root).
 
 export type Checkpoint = {
 	index: number,
@@ -14,12 +15,20 @@ export type Checkpoint = {
 }
 
 local Checkpoints = {}
+Checkpoints.__index = Checkpoints
 
-local list: { Checkpoint } = {}
-local levelCount = 0
 -- Por nivel: línea ideal (Entry → Route → Exit) con distancias acumuladas, título y color del bioma (HUD).
 type LevelInfo = { points: { Vector3 }, lengths: { number }, total: number, title: string, color: Color3? }
-local levels: { [number]: LevelInfo } = {}
+
+export type Course = typeof(setmetatable(
+	{} :: {
+		root: Instance?,
+		list: { Checkpoint },
+		levelCount: number,
+		levels: { [number]: LevelInfo },
+	},
+	Checkpoints
+))
 
 local function levelTitle(map: Instance, index: number): string
 	local level = map:FindFirstChild(string.format("Level%02d", index))
@@ -41,13 +50,14 @@ local function flatSpawn(zone: BasePart): CFrame
 	return CFrame.lookAt(zone.Position, zone.Position + forward)
 end
 
--- Lee el mapa (una vez, al arrancar el servidor). Sin mapa no hay checkpoints: se reaparece en la salida.
-function Checkpoints.load(map: Instance?)
-	table.clear(list)
-	table.clear(levels)
-	levelCount = 0
+-- Lee un recorrido (una vez, al arrancar el servidor). Sin recorrido no hay checkpoints: se reaparece en la salida.
+function Checkpoints.new(map: Instance?): Course
+	local list: { Checkpoint } = {}
+	local levels: { [number]: LevelInfo } = {}
+	local levelCount = 0
+	local course = setmetatable({ root = map, list = list, levelCount = 0, levels = levels }, Checkpoints)
 	if not map then
-		return
+		return course
 	end
 	while map:FindFirstChild(string.format("Level%02d", levelCount + 1)) do
 		levelCount += 1
@@ -116,15 +126,17 @@ function Checkpoints.load(map: Instance?)
 		})
 		previousBiome = biome or previousBiome
 	end
+	course.levelCount = levelCount
+	return course
 end
 
-function Checkpoints.count(): number
-	return levelCount
+function Checkpoints.count(self: Course): number
+	return self.levelCount
 end
 
 -- Título y color del bioma de un nivel (para el HUD).
-function Checkpoints.levelInfo(index: number): (string, Color3?)
-	local info = levels[index]
+function Checkpoints.levelInfo(self: Course, index: number): (string, Color3?)
+	local info = self.levels[index]
 	if not info then
 		return "", nil
 	end
@@ -133,8 +145,8 @@ end
 
 -- Fracción recorrida del nivel (0-1): proyección de la posición sobre su línea ideal, sin retroceder a
 -- tramos lejanos (se toma el punto más cercano de toda la polilínea).
-function Checkpoints.progress(index: number, position: Vector3): number
-	local info = levels[index]
+function Checkpoints.progress(self: Course, index: number, position: Vector3): number
+	local info = self.levels[index]
 	if not info or #info.points < 2 or info.total <= 0 then
 		return 0
 	end
@@ -153,8 +165,8 @@ function Checkpoints.progress(index: number, position: Vector3): number
 end
 
 -- Primer checkpoint con índice > afterIndex cuyo plano se cruzó hacia adelante entre from y to.
-function Checkpoints.crossed(from: Vector3, to: Vector3, afterIndex: number): Checkpoint?
-	for _, checkpoint in list do
+function Checkpoints.crossed(self: Course, from: Vector3, to: Vector3, afterIndex: number): Checkpoint?
+	for _, checkpoint in self.list do
 		if checkpoint.index <= afterIndex then
 			continue
 		end

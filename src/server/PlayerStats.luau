@@ -3,6 +3,7 @@
 --   · HighestLevel  mayor nivel superado (checkpoint más alto alcanzado; el total = meta)
 --   · BestTime      mejor tiempo del recorrido completo desde la salida (segundos; nil = aún no lo terminó)
 --   · Completions   recorridos terminados · Runs  vuelos empezados · Crashes  choques
+--   · TutorialDone  ya hizo (o saltó) el tutorial: no vuelve a empezar solo al entrar
 -- NO se guarda por dónde iba: cada vuelo empieza siempre en la salida.
 --
 -- Guardado con fusión (UpdateAsync): los récords se combinan con max/min y los contadores suman lo pendiente.
@@ -25,6 +26,7 @@ export type Stats = {
 	Completions: number,
 	Runs: number,
 	Crashes: number,
+	TutorialDone: boolean,
 }
 
 -- Sumas aún no escritas en el DataStore.
@@ -41,13 +43,14 @@ type Entry = {
 local store: DataStore? = nil
 local entries: { [Player]: Entry } = {}
 local busy = 0 -- guardados en marcha (BindToClose espera a que terminen)
+local loadedListeners: { (Player, Stats) -> () } = {}
 
 local function emptyPending(): Pending
 	return { Completions = 0, Runs = 0, Crashes = 0 }
 end
 
 local function emptyStats(): Stats
-	return { HighestLevel = 0, BestTime = nil, Completions = 0, Runs = 0, Crashes = 0 }
+	return { HighestLevel = 0, BestTime = nil, Completions = 0, Runs = 0, Crashes = 0, TutorialDone = false }
 end
 
 -- Datos guardados → Stats, descartando lo que no tenga el tipo esperado.
@@ -69,6 +72,7 @@ local function sanitize(raw: unknown): Stats
 	stats.Completions = math.floor(number("Completions") or 0)
 	stats.Runs = math.floor(number("Runs") or 0)
 	stats.Crashes = math.floor(number("Crashes") or 0)
+	stats.TutorialDone = data.TutorialDone == true
 	return stats
 end
 
@@ -151,11 +155,15 @@ local function load(player: Player, entry: Entry)
 			stats.Completions = saved.Completions + pending.Completions
 			stats.Runs = saved.Runs + pending.Runs
 			stats.Crashes = saved.Crashes + pending.Crashes
+			stats.TutorialDone = stats.TutorialDone or saved.TutorialDone
 		end
 	end
 	entry.loaded = true
 	if entries[player] == entry then
 		publish(player, entry)
+		for _, listener in loadedListeners do
+			task.spawn(listener, player, table.clone(entry.stats))
+		end
 	end
 end
 
@@ -168,6 +176,7 @@ local function save(player: Player, entry: Entry)
 	local pending = entry.pending
 	local highest = entry.stats.HighestLevel
 	local bestTime = entry.stats.BestTime
+	local tutorialDone = entry.stats.TutorialDone
 	entry.pending = emptyPending()
 	entry.dirty = false
 
@@ -181,6 +190,7 @@ local function save(player: Player, entry: Entry)
 			saved.Completions += pending.Completions
 			saved.Runs += pending.Runs
 			saved.Crashes += pending.Crashes
+			saved.TutorialDone = saved.TutorialDone or tutorialDone
 			local data = saved :: any
 			data.Version = VERSION
 			return data, { player.UserId } -- UserIds: para peticiones de borrado de datos (GDPR)
@@ -251,6 +261,27 @@ function PlayerStats.courseCompleted(player: Player, runTime: number): boolean
 		end
 	end)
 	return record
+end
+
+-- Terminó o saltó el tutorial: no vuelve a empezar solo.
+function PlayerStats.markTutorialDone(player: Player)
+	local entry = entries[player]
+	if not entry or entry.stats.TutorialDone then
+		return
+	end
+	entry.stats.TutorialDone = true
+	entry.dirty = true
+end
+
+-- Llama a listener(player, stats) cuando termina la lectura de cada jugador (también si falló: estadísticas
+-- vacías). Los que ya habían cargado reciben la llamada enseguida.
+function PlayerStats.onLoaded(listener: (Player, Stats) -> ())
+	table.insert(loadedListeners, listener)
+	for player, entry in entries do
+		if entry.loaded then
+			task.spawn(listener, player, table.clone(entry.stats))
+		end
+	end
 end
 
 function PlayerStats.get(player: Player): Stats?

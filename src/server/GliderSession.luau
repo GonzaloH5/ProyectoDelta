@@ -19,6 +19,7 @@ local LEFT, RIGHT = -1, 1
 
 type Slot = {
 	player: Player?,
+	bot: Model?, -- compañero bot del tutorial (TutorialBot mueve su `axis`)
 	rig: RiderRig.Rig?,
 	axis: number, -- -1 A, 0 nada, 1 D (visual, desde la cámara trasera)
 	position: number, -- studs desde el centro de la barra (-izquierda, +derecha), toda la barra
@@ -69,6 +70,7 @@ end
 local function newSlot(side: number): Slot
 	return {
 		player = nil,
+		bot = nil,
 		rig = nil,
 		axis = 0,
 		position = lateralFor(side, Config.StartOutward),
@@ -324,10 +326,13 @@ function GliderSession._updateTrails(self: Session)
 	end
 end
 
+-- LeftUserId / RightUserId: UserId de quien va en cada hueco, 0 = vacío, -1 = bot del tutorial.
 function GliderSession._publishSlots(self: Session)
-	local left, right = self.slots[LEFT].player, self.slots[RIGHT].player
-	self.glider:SetAttribute("LeftUserId", if left then left.UserId else 0)
-	self.glider:SetAttribute("RightUserId", if right then right.UserId else 0)
+	local function id(slot: Slot): number
+		return if slot.player then slot.player.UserId elseif slot.bot then -1 else 0
+	end
+	self.glider:SetAttribute("LeftUserId", id(self.slots[LEFT]))
+	self.glider:SetAttribute("RightUserId", id(self.slots[RIGHT]))
 end
 
 function GliderSession._board(self: Session, player: Player, side: number)
@@ -346,6 +351,22 @@ function GliderSession._board(self: Session, player: Player, side: number)
 	slot.diedConnection = rig.humanoid.Died:Once(function()
 		self:removePlayer(player)
 	end)
+end
+
+-- Cuelga un personaje bot (TutorialBot) en el hueco `side`. Va dentro del modelo del ala: los clientes lo ven
+-- como parte de su ala (OtherDuos) y se destruye con ella al terminar.
+function GliderSession.addBot(self: Session, character: Model, side: number)
+	local slot = self.slots[side]
+	character.Parent = self.glider
+	slot.position = lateralFor(side, Config.StartOutward)
+	local rig = RiderRig.attach(character, self.root, side, slot.position)
+	if not rig then
+		character:Destroy()
+		return
+	end
+	slot.bot = character
+	slot.rig = rig
+	self:_publishSlots()
 end
 
 function GliderSession.slotOf(self: Session, player: Player): number?
@@ -393,8 +414,8 @@ function GliderSession.removePlayer(self: Session, player: Player)
 	end
 	self.slots[side] = newSlot(side)
 	self:_publishSlots()
-	if self:riderCount() == 0 then
-		self:finish("empty")
+	if #self:riders() == 0 then
+		self:finish("empty") -- no queda ningún jugador (un bot solo no vuela)
 	elseif #self.members >= 2 then
 		self:finish("lobby")
 	end

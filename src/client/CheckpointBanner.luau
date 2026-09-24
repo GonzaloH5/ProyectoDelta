@@ -233,18 +233,23 @@ function CheckpointBanner.show(data: { [string]: any })
 	local total = if type(data.total) == "number" then data.total else index
 	local color = if typeof(data.color) == "Color3" then data.color else DEFAULT_COLOR
 	local final = data.final == true
+	local tutorial = data.tutorial == true
 	local time = if type(data.time) == "number" then data.time else nil
 	finalToken = if final then mine else -1
 
 	band.BackgroundColor3 = color
-	title.Text = if final then "COURSE COMPLETE!" else "CHECKPOINT"
+	title.Text = if final and tutorial then "TUTORIAL COMPLETE!" elseif final then "COURSE COMPLETE!" else "CHECKPOINT"
 	title.TextSize = if final then 54 else 64
 	titleStroke.Color = color:Lerp(Color3.new(0, 0, 0), 0.55)
-	subtitle.Text = if final and time
+	subtitle.Text = if final and tutorial
+		then "You're ready to fly with a friend!"
+		elseif final and time
 		then string.format("%d / %d LEVELS  ·  TIME %s", total, total, formatTime(time))
 		elseif final then string.format("%d / %d LEVELS  ·  Great flying, duo!", total, total)
 		else string.format("LEVEL %02d CLEARED  ·  %s", index, tostring(data.title or ""))
-	nextLine.Text = if final
+	nextLine.Text = if final and tutorial
+		then "Land on the island, then step on a Duo pad together"
+		elseif final
 		then "Land on the island to return to the lobby"
 		else string.format("NEXT  »  LEVEL %02d  ·  %s", index + 1, tostring(data.nextTitle or ""))
 	local newBiome = data.newBiome

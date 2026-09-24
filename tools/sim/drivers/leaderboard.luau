@@ -184,4 +184,29 @@ Roblox.sim.run(1)
 local saved = plain["Player_404"]
 check("PlayerStats guardado", saved and saved.HighestLevel == 4 and saved.BestTime == 1000 and saved.Runs == 1 and saved.Crashes == 1 and saved.Completions == 2, saved and string.format("%s %s %s %s %s", tostring(saved.HighestLevel), tostring(saved.BestTime), tostring(saved.Runs), tostring(saved.Crashes), tostring(saved.Completions)))
 
+-- TutorialDone: se guarda y se combina con OR (nunca vuelve a false).
+local erin = newPlayer(505, "Erin")
+check("tutorial pendiente al entrar", PlayerStats.get(erin).TutorialDone == false)
+PlayerStats.markTutorialDone(erin)
+for _, f in removing do
+	f(erin)
+end
+Roblox.sim.run(1)
+check("TutorialDone guardado", plain["Player_505"] and plain["Player_505"].TutorialDone == true)
+local loadedWith = nil
+PlayerStats.onLoaded(function(player, stats)
+	if player.Name == "Erin2" then
+		loadedWith = stats
+	end
+end)
+local erin2 = newPlayer(505, "Erin2")
+Roblox.sim.run(1)
+check("al volver, TutorialDone cargado", loadedWith and loadedWith.TutorialDone == true)
+PlayerStats.runStarted(erin2)
+for _, f in removing do
+	f(erin2)
+end
+Roblox.sim.run(1)
+check("OR: sigue a true tras otro guardado", plain["Player_505"].TutorialDone == true and plain["Player_505"].Runs == 1)
+
 print(if failures == 0 then "leaderboard OK" else string.format("leaderboard: %d fallos", failures))

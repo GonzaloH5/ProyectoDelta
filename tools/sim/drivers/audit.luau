@@ -17,4 +17,16 @@ while map:FindFirstChild(string.format("Level%02d", index)) do
 	print(string.format("%s %-9s peor invasión %.1f · %d rayos fuera de límite · %s", level.Name, tostring(level:GetAttribute("Biome")), worst, violations, detail))
 	index += 1
 end
+local tutorial = map:FindFirstChild("Tutorial")
+index = 1
+while tutorial and tutorial:FindFirstChild(string.format("Level%02d", index)) do
+	local level = tutorial[string.format("Level%02d", index)]
+	local worst, violations, detail = MapDresser.audit(level)
+	total += 1
+	if violations > 0 then
+		bad += 1
+	end
+	print(string.format("Tutorial.%s peor invasión %.1f · %d rayos fuera de límite · %s", level.Name, worst, violations, detail))
+	index += 1
+end
 print(string.format("Regla de oro: %d de %d niveles con invasiones por encima del límite", bad, total))

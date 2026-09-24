@@ -19,7 +19,7 @@ local GliderConfig = {
 	OtherDuoTransparency = 0.35, -- transparencia con la que ves alas y jugadores de otros dúos
 
 	-- ── Tutorial ───────────────────────────────────────────────────────
-	ShowTutorialOnJoin = true, -- muestra la imagen de tutorial al unirse (se cierra con la X)
+	ShowTutorialOnJoin = false, -- imagen de tutorial al unirse (la sustituye el tutorial jugable con bot)
 	TutorialImageId = "rbxassetid://102857509779424",
 	TutorialImageAspect = 1023 / 576, -- ancho / alto de la imagen
 

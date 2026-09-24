@@ -60,9 +60,10 @@ local function invertCurve(value: number, exponent: number): number
 	return math.sign(value) * math.abs(value) ^ (1 / exponent)
 end
 
-function FlightTester.run(levelIndex: number, routeName: string?, pilot): string
+-- root (opcional) = recorrido donde está el nivel: Workspace.Map (por defecto) o Workspace.Map.Tutorial.
+function FlightTester.run(levelIndex: number, routeName: string?, pilot, root: Instance?): string
 	pilot = pilot or FlightTester.FULL
-	local map = workspace:FindFirstChild("Map")
+	local map = root or workspace:FindFirstChild("Map")
 	local levelName = string.format("Level%02d", levelIndex)
 	local level = map and map:FindFirstChild(levelName)
 	local spawn = map and map.DevSpawns:FindFirstChild(levelName)
@@ -301,22 +302,23 @@ FlightTester.RULES = {
 	{ upTo = 50, checks = { { FlightTester.FULL, 4 } } },
 }
 
--- from/to (opcionales) limitan los niveles comprobados.
-function FlightTester.checkRules(from: number?, to: number?): string
-	local map = workspace:FindFirstChild("Map")
+-- Tutorial (Map.Tutorial): es la primera vez que se vuela, así que el novato y el tranquilo pasan con ≥ 8.
+FlightTester.TUTORIAL_RULE = { upTo = math.huge, checks = { { FlightTester.NOVICE, 8 }, { FlightTester.CALM, 8 } } }
+
+local function check(map: Instance?, from: number?, to: number?, fixedTier): string
 	local lines, failures = {}, 0
 	local index = from or 1
 	while map and map:FindFirstChild(string.format("Level%02d", index)) and index <= (to or math.huge) do
-		local tier
+		local tier = fixedTier
 		for _, rule in FlightTester.RULES do
-			if index <= rule.upTo then
+			if not tier and index <= rule.upTo then
 				tier = rule
 				break
 			end
 		end
 		for _, check in tier.checks do
 			local pilot, required = check[1], check[2]
-			local line, info = FlightTester.run(index, nil, pilot)
+			local line, info = FlightTester.run(index, nil, pilot, map)
 			local pass = info.ok and info.minMargin > required
 			if not pass then
 				failures += 1
@@ -327,6 +329,17 @@ function FlightTester.checkRules(from: number?, to: number?): string
 	end
 	table.insert(lines, if failures == 0 then "Regla de dificultad: todo OK" else string.format("Regla de dificultad: %d fallos", failures))
 	return table.concat(lines, "\n")
+end
+
+-- from/to (opcionales) limitan los niveles comprobados.
+function FlightTester.checkRules(from: number?, to: number?): string
+	return check(workspace:FindFirstChild("Map"), from, to, nil)
+end
+
+-- Los tres tramos del tutorial.
+function FlightTester.checkTutorial(): string
+	local map = workspace:FindFirstChild("Map")
+	return check(map and map:FindFirstChild("Tutorial"), nil, nil, FlightTester.TUTORIAL_RULE)
 end
 
 return FlightTester

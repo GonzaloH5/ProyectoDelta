@@ -9,6 +9,11 @@
 --
 -- Las alas y jugadores de distintos dúos no chocan entre sí (CollisionGroups) y cada
 -- cliente ve a los otros dúos ligeramente transparentes (GliderClient).
+--
+-- Tutorial (Map.Tutorial): un jugador + un bot compañero (TutorialBot), 3 tramos cortos. Solo la primera
+-- vez que alguien entra (sin PlayerStats.TutorialDone) se le ofrece en pantalla; acepte o rechace, ya no se
+-- vuelve a ofrecer. Durante el tutorial se puede saltar (botón SKIP o Lobby). No cuenta para estadísticas
+-- ni clasificación.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -24,13 +29,24 @@ local GliderSession = require(script.Parent.GliderSession)
 local LevelStreaming = require(script.Parent.LevelStreaming)
 local Lobby = require(script.Parent.Lobby)
 local PlayerStats = require(script.Parent.PlayerStats)
+local TutorialBot = require(script.Parent.TutorialBot)
 local remote = Shared:WaitForChild("GliderRemote") :: RemoteEvent
 
 CollisionGroups.setup()
 PlayerStats.start()
-Checkpoints.load(workspace:FindFirstChild("Map"))
-LevelStreaming.load(workspace:FindFirstChild("Map"))
-DuoLeaderboard.start(Checkpoints.count())
+local map = workspace:FindFirstChild("Map")
+local tutorialMap = map and map:FindFirstChild("Tutorial")
+local mainCourse = Checkpoints.new(map)
+local tutorialCourse = Checkpoints.new(tutorialMap)
+LevelStreaming.load(map)
+LevelStreaming.load(tutorialMap)
+DuoLeaderboard.start(mainCourse:count())
+
+-- Indicaciones del bot por tramo del tutorial.
+local tutorialCues: { [number]: { TutorialBot.Cue } } = {}
+for index = 1, tutorialCourse:count() do
+	tutorialCues[index] = TutorialBot.cuesOf(tutorialMap and tutorialMap:FindFirstChild(string.format("Level%02d", index)))
+end
 
 -- La AlaDelta del mapa es la plantilla: marca dónde y cómo sale cada ala. Nadie vuela la original.
 local template = workspace:WaitForChild(Config.GliderName) :: Model
@@ -48,6 +64,8 @@ local lastPosition: { [Session]: Vector3 } = {} -- posición del ala en el paso 
 local wasFlying: { [Session]: true } = {} -- volaba en el paso anterior (para contar choques)
 local inCountdown: { [Session]: true } = {} -- en cuenta atrás en el paso anterior (para cargar la zona al empezarla)
 local devRuns: { [Session]: true } = {} -- vuelos de prueba (DevStartLevel): no cuentan para las estadísticas
+local tutorialRuns: { [Session]: true } = {} -- vuelos del tutorial (con bot): tampoco cuentan
+local courseOf: { [Session]: Checkpoints.Course } = {}
 local nextId = 0
 
 -- Sesión en la que el jugador sigue colgado (si murió o se soltó, ya no cuenta).
@@ -76,6 +94,9 @@ local function onSessionFinished(session: Session, reason: GliderSession.FinishR
 	wasFlying[session] = nil
 	inCountdown[session] = nil
 	devRuns[session] = nil
+	courseOf[session] = nil
+	local wasTutorial = tutorialRuns[session]
+	tutorialRuns[session] = nil
 	for _, player in session.members do
 		if sessionOf[player] == session then
 			sessionOf[player] = nil
@@ -83,6 +104,12 @@ local function onSessionFinished(session: Session, reason: GliderSession.FinishR
 	end
 	if reason == "empty" then
 		return
+	end
+	if wasTutorial then
+		-- Terminado o saltado (botón SKIP o Lobby): ya no vuelve a empezar solo.
+		for _, player in riders do
+			PlayerStats.markTutorialDone(player)
+		end
 	end
 
 	-- Botón Lobby o meta: todo el dúo vuelve al lobby (reaparece en su SpawnLocation).
@@ -114,15 +141,16 @@ end
 
 -- Nivel en curso (el siguiente al último checkpoint) para el HUD: número, total, título y color del bioma.
 local function levelOf(session: Session): number
-	return math.clamp(session.checkpoint + 1, 1, math.max(Checkpoints.count(), 1))
+	return math.clamp(session.checkpoint + 1, 1, math.max(courseOf[session]:count(), 1))
 end
 
 local function publishLevel(session: Session)
+	local course = courseOf[session]
 	local level = levelOf(session)
-	local title, color = Checkpoints.levelInfo(level)
+	local title, color = course:levelInfo(level)
 	local glider = session.glider
 	glider:SetAttribute("Level", level)
-	glider:SetAttribute("LevelCount", Checkpoints.count())
+	glider:SetAttribute("LevelCount", course:count())
 	glider:SetAttribute("LevelTitle", title)
 	glider:SetAttribute("LevelColor", color)
 	glider:SetAttribute("LevelProgress", if session.completed then 1 else 0)
@@ -144,6 +172,7 @@ local function startSession(players: { Player })
 	local launchAt, startCheckpoint = devLaunchPoint()
 	local session = GliderSession.new(nextId, template, gliderFolder, duo, onSessionFinished, launchAt, startCheckpoint)
 	sessions[session] = true
+	courseOf[session] = mainCourse
 	if startCheckpoint > 0 then
 		devRuns[session] = true
 	end
@@ -156,18 +185,45 @@ local function startSession(players: { Player })
 	end
 end
 
+-- Tutorial para un jugador, con el bot en el otro hueco. Despega en Map.Tutorial.StartIsland.LaunchPoint.
+local function startTutorial(player: Player)
+	local start = tutorialMap and tutorialMap:FindFirstChild("StartIsland")
+	local launch = start and start:FindFirstChild("LaunchPoint")
+	if not (launch and launch:IsA("BasePart")) or tutorialCourse:count() == 0 then
+		warn("[Glider] No hay Map.Tutorial: regenera el mapa con MapBuilder para tener tutorial")
+		return
+	end
+	if player.Parent ~= Players or isBusy(player) or not isAlive(player) then
+		return
+	end
+	local bot = TutorialBot.create()
+	if not bot then
+		return
+	end
+	nextId += 1
+	local session = GliderSession.new(nextId, template, gliderFolder, { player }, onSessionFinished, launch.CFrame, 0)
+	session:addBot(bot, TutorialBot.SIDE)
+	sessions[session] = true
+	courseOf[session] = tutorialCourse
+	tutorialRuns[session] = true
+	session.glider:SetAttribute("Tutorial", true)
+	publishLevel(session)
+	sessionOf[player] = session
+end
+
 -- El ala cruzó un checkpoint: desde aquí reaparece, y ambos ven la pantalla de checkpoint.
 -- Récords (solo vuelos desde la salida): estadísticas de cada jugador y clasificación del dúo.
 local function reachCheckpoint(session: Session, checkpoint: Checkpoints.Checkpoint)
 	session:setCheckpoint(checkpoint.index, checkpoint.spawn, checkpoint.final)
 	publishLevel(session)
-	local counts = not devRuns[session]
+	local counts = not devRuns[session] and not tutorialRuns[session]
 	local riders = session:riders()
 	local runTime = session.runTime
 	local info = checkpoint.info
-	if checkpoint.final then
+	if checkpoint.final or tutorialRuns[session] then
 		info = table.clone(info)
 		info.time = runTime -- la pantalla de meta muestra el tiempo del recorrido
+		info.tutorial = tutorialRuns[session] -- "TUTORIAL COMPLETE!" en vez de "COURSE COMPLETE!"
 	end
 	local personalBest: { [Player]: boolean } = {}
 	for _, player in riders do
@@ -198,6 +254,30 @@ end
 
 Lobby.start({ isBusy = isBusy, onDuoReady = startSession })
 
+-- La primera vez que alguien entra (sin TutorialDone guardado) se le ofrece el tutorial en pantalla
+-- ("TutorialOffer"); el cliente responde con "TutorialAnswer" (true = jugar). Se espera a que su personaje
+-- esté en el lobby; si no aparece en ~30 s o ya está volando, no se ofrece.
+local tutorialOffered: { [Player]: true } = {}
+PlayerStats.onLoaded(function(player: Player, stats: PlayerStats.Stats)
+	if stats.TutorialDone or tutorialCourse:count() == 0 then
+		return
+	end
+	for _ = 1, 60 do
+		if player.Parent ~= Players or isBusy(player) then
+			return
+		end
+		if isAlive(player) then
+			task.wait(1.5) -- un momento en el lobby antes de preguntar
+			if player.Parent == Players and not isBusy(player) then
+				tutorialOffered[player] = true
+				remote:FireClient(player, "TutorialOffer")
+			end
+			return
+		end
+		task.wait(0.5)
+	end
+end)
+
 -- ── Mensajes de los clientes ──────────────────────────────────────────
 
 -- Filtro previo contra inundar el remoto: tipo de mensaje válido y tope de mensajes por jugador
@@ -221,12 +301,27 @@ remote.OnServerEvent:Connect(function(player: Player, kind: unknown, value: unkn
 	if not allowMessage(player, kind) then
 		return
 	end
+	if kind == "TutorialAnswer" then
+		-- Solo cuenta si se le ofreció: acepte o rechace, ya no se vuelve a ofrecer.
+		if tutorialOffered[player] then
+			tutorialOffered[player] = nil
+			PlayerStats.markTutorialDone(player)
+			if value == true then
+				startTutorial(player)
+			end
+		end
+		return
+	end
 	local session = activeSession(player)
 	if not session then
 		return
 	end
 	if kind == "Lobby" then
 		session:finish("lobby") -- cualquiera de los dos cancela el vuelo del dúo
+	elseif kind == "SkipTutorial" then
+		if tutorialRuns[session] then
+			session:finish("lobby")
+		end
 	else
 		session:handleMessage(player, kind, value)
 	end
@@ -246,13 +341,22 @@ RunService.Heartbeat:Connect(function(rawDt)
 		progressTimer = 0
 	end
 	for session in sessions do
+		local course = courseOf[session]
 		if publishProgress and not session.completed then
-			session.glider:SetAttribute("LevelProgress", Checkpoints.progress(levelOf(session), session.root.Position))
+			session.glider:SetAttribute("LevelProgress", course:progress(levelOf(session), session.root.Position))
+		end
+		if tutorialRuns[session] then
+			local level = levelOf(session)
+			local progress = if session.flight.state == "Flying" then course:progress(level, session.root.Position) else 0
+			local hint = TutorialBot.step(session.slots, session.flight.state, tutorialCues[level] or {}, progress)
+			if session.glider:GetAttribute("TutorialHint") ~= hint then
+				session.glider:SetAttribute("TutorialHint", hint)
+			end
 		end
 		-- Checkpoints: tramo recorrido desde el paso anterior (solo en vuelo; tras reaparecer se empieza de cero).
 		-- Choque: pasa de volar a "Ended" sin haber cruzado la meta (aterrizar tras la meta no es choque).
 		local flying = session.flight.state == "Flying"
-		if wasFlying[session] and session.flight.state == "Ended" and not session.completed and not devRuns[session] then
+		if wasFlying[session] and session.flight.state == "Ended" and not session.completed and not devRuns[session] and not tutorialRuns[session] then
 			for _, player in session:riders() do
 				PlayerStats.crashed(player)
 			end
@@ -277,7 +381,7 @@ RunService.Heartbeat:Connect(function(rawDt)
 		if flying then
 			local position = session.root.Position
 			local previous = lastPosition[session]
-			local checkpoint = previous and Checkpoints.crossed(previous, position, session.checkpoint)
+			local checkpoint = previous and course:crossed(previous, position, session.checkpoint)
 			if checkpoint then
 				reachCheckpoint(session, checkpoint)
 			end
@@ -302,4 +406,5 @@ Players.PlayerRemoving:Connect(function(player)
 	end
 	sessionOf[player] = nil
 	messageWindow[player] = nil
+	tutorialOffered[player] = nil
 end)

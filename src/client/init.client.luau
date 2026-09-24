@@ -19,6 +19,7 @@ local LobbyButton = require(script:WaitForChild("LobbyButton"))
 local CheckpointBanner = require(script:WaitForChild("CheckpointBanner"))
 local OtherDuos = require(script:WaitForChild("OtherDuos"))
 local Tutorial = require(script:WaitForChild("Tutorial"))
+local TutorialHints = require(script:WaitForChild("TutorialHints"))
 
 local player = Players.LocalPlayer
 Tutorial.show() -- al unirse a la sala
@@ -29,6 +30,8 @@ remote.OnClientEvent:Connect(function(kind: unknown, data: unknown)
 		CheckpointBanner.show(data :: any)
 	elseif kind == "DuoResult" and type(data) == "table" then
 		CheckpointBanner.showResult(data :: any)
+	elseif kind == "TutorialOffer" then
+		TutorialHints.offer()
 	end
 end)
 
@@ -141,6 +144,7 @@ RunService:BindToRenderStep("GliderClient", Enum.RenderPriority.Camera.Value + 1
 	end
 
 	FlightHud.update(mountedGlider, mountedSide, dt)
+	TutorialHints.update(mountedGlider)
 	OtherDuos.update(gliderFolder, mountedGlider, dt)
 end)
 
