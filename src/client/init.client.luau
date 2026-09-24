@@ -28,6 +28,8 @@ local Settings = require(script:WaitForChild("Settings"))
 local BiomeLighting = require(script:WaitForChild("BiomeLighting"))
 local Backdrop = require(script:WaitForChild("Backdrop"))
 local Ambient = require(script:WaitForChild("Ambient"))
+local ScreenFade = require(script:WaitForChild("ScreenFade"))
+require(script:WaitForChild("SettingsPanel")) -- botón ⚙ siempre visible
 
 local player = Players.LocalPlayer
 Tutorial.show() -- al unirse a la sala
@@ -168,6 +170,7 @@ RunService:BindToRenderStep("GliderClient", Enum.RenderPriority.Camera.Value + 1
 	BiomeLighting.update(mountedGlider)
 	Backdrop.update(mountedGlider, dt)
 	Ambient.update(mountedGlider, dt)
+	ScreenFade.update(mountedGlider)
 	TutorialHints.update(mountedGlider)
 	OtherDuos.update(gliderFolder, mountedGlider, dt)
 end)

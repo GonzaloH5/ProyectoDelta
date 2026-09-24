@@ -1,6 +1,8 @@
 --!strict
 -- HUD de vuelo (solo mientras vas en el ala). Lee los atributos que publica el servidor en el ala:
 --   · arriba izquierda: LEVEL NN / total, título, franja del color del bioma y barra de progreso del nivel
+--                       (se encoge a una tira compacta unos segundos después de empezar cada nivel)
+--   · centro, al empezar cada nivel: tarjeta "LEVEL NN · título" que aparece y se va
 --   · arriba derecha:   cronómetro del recorrido (RunTime)
 --   · arriba centro:    corazones del ala (Hearts / MaxHearts): parpadean al perder uno
 --   · abajo centro:     la barra del ala con tu marca y la de tu compañero (con flechas de hacia dónde se está
@@ -105,18 +107,43 @@ fill.BorderSizePixel = 0
 fill.Parent = track
 corner(fill, UDim.new(1, 0))
 
--- Cronómetro (arriba derecha).
+-- Cronómetro compacto (arriba derecha).
 local timerPanel = panel(gui, "Timer")
 timerPanel.AnchorPoint = Vector2.new(1, 0)
 timerPanel.Position = UDim2.new(1, -16, 0, 12)
-timerPanel.Size = UDim2.fromOffset(170, 50)
-local timerCaption = text(timerPanel, Enum.Font.GothamBold, 11, Color3.fromRGB(180, 190, 205))
-timerCaption.Position = UDim2.fromOffset(0, 5)
-timerCaption.Size = UDim2.new(1, 0, 0, 12)
+timerPanel.Size = UDim2.fromOffset(136, 40)
+local timerCaption = text(timerPanel, Enum.Font.GothamBold, 10, Color3.fromRGB(180, 190, 205))
+timerCaption.Position = UDim2.fromOffset(10, 0)
+timerCaption.Size = UDim2.fromOffset(30, 40)
+timerCaption.TextXAlignment = Enum.TextXAlignment.Left
 timerCaption.Text = "TIME"
-local timerText = text(timerPanel, Enum.Font.RobotoMono, 26)
-timerText.Position = UDim2.fromOffset(0, 17)
-timerText.Size = UDim2.new(1, 0, 0, 28)
+local timerText = text(timerPanel, Enum.Font.RobotoMono, 22)
+timerText.Position = UDim2.fromOffset(38, 0)
+timerText.Size = UDim2.new(1, -44, 1, 0)
+timerText.TextXAlignment = Enum.TextXAlignment.Right
+
+-- Tarjeta de título al empezar cada nivel (centro, algo arriba).
+local titleCard = Instance.new("CanvasGroup")
+titleCard.AnchorPoint = Vector2.new(0.5, 0.5)
+titleCard.Position = UDim2.fromScale(0.5, 0.26)
+titleCard.Size = UDim2.fromOffset(560, 110)
+titleCard.BackgroundTransparency = 1
+titleCard.GroupTransparency = 1
+titleCard.Parent = gui
+local cardLevel = text(titleCard, Enum.Font.GothamBlack, 44)
+cardLevel.Size = UDim2.new(1, 0, 0, 50)
+stroke(cardLevel, 3, 0.2)
+local cardTitle = text(titleCard, Enum.Font.GothamBold, 24, Color3.fromRGB(230, 236, 245))
+cardTitle.Position = UDim2.fromOffset(0, 52)
+cardTitle.Size = UDim2.new(1, 0, 0, 30)
+stroke(cardTitle, 2, 0.35)
+local cardLine = Instance.new("Frame")
+cardLine.AnchorPoint = Vector2.new(0.5, 0)
+cardLine.Position = UDim2.new(0.5, 0, 0, 90)
+cardLine.Size = UDim2.fromOffset(180, 4)
+cardLine.BorderSizePixel = 0
+cardLine.Parent = titleCard
+corner(cardLine, UDim.new(1, 0))
 
 -- Corazones (arriba centro).
 local heartsRow = Instance.new("Frame")
@@ -265,6 +292,38 @@ local lastState: string? = nil
 local lastCountdown = -1
 local shownHearts = Config.WingHearts
 local blinkClock = 0
+local CARD_TIME = 5 -- s que la tarjeta de nivel se ve entera antes de encogerse
+local lastLevel = -1
+local cardExpanded = true
+local cardExpandUntil = 0
+local titleToken = 0
+
+local function setCardExpanded(expanded: boolean)
+	if expanded == cardExpanded then
+		return
+	end
+	cardExpanded = expanded
+	TweenService:Create(card, TweenInfo.new(0.3, Enum.EasingStyle.Quad), { Size = UDim2.fromOffset(if expanded then 300 else 220, if expanded then 74 else 44) }):Play()
+	titleText.Visible = expanded
+	levelText.TextSize = if expanded then 22 else 18
+end
+
+-- "LEVEL NN · título": aparece, se queda un momento y se va.
+local function showTitleCard(level: number, title: string, color: Color3)
+	titleToken += 1
+	local mine = titleToken
+	cardLevel.Text = string.format("LEVEL %02d", level)
+	cardTitle.Text = title
+	cardLine.BackgroundColor3 = color
+	titleCard.GroupTransparency = 1
+	titleCard.Position = UDim2.fromScale(0.5, 0.28)
+	TweenService:Create(titleCard, TweenInfo.new(0.35, Enum.EasingStyle.Quad), { GroupTransparency = 0, Position = UDim2.fromScale(0.5, 0.26) }):Play()
+	task.delay(2.2, function()
+		if titleToken == mine then
+			TweenService:Create(titleCard, TweenInfo.new(0.5, Enum.EasingStyle.Quad), { GroupTransparency = 1 }):Play()
+		end
+	end)
+end
 local syncTime, syncShownUntil, syncCooldownUntil = 0, 0, 0
 local SYNC_HOLD = 0.35 -- s moviéndose a la vez para que cuente
 local SYNC_SHOW, SYNC_COOLDOWN = 1.2, 5
@@ -286,6 +345,7 @@ function FlightHud.update(glider: Model?, side: number, dt: number)
 	gui.Enabled = glider ~= nil and side ~= 0
 	if not glider or side == 0 then
 		lastState, lastCountdown = nil, -1
+		lastLevel = -1
 		return
 	end
 
@@ -298,6 +358,16 @@ function FlightHud.update(glider: Model?, side: number, dt: number)
 	levelText.Text = string.format('LEVEL %02d <font size="15" color="#b4bece">/ %02d</font>', level, total)
 	local title = glider:GetAttribute("LevelTitle")
 	titleText.Text = if type(title) == "string" then title else ""
+	-- Nivel nuevo: tarjeta grande en el centro y la de arriba se ve entera unos segundos.
+	if level ~= lastLevel and level > 0 then
+		lastLevel = level
+		cardExpandUntil = os.clock() + CARD_TIME
+		setCardExpanded(true)
+		if glider:GetAttribute("Completed") ~= true then
+			showTitleCard(level, titleText.Text, accentColor)
+		end
+	end
+	setCardExpanded(os.clock() < cardExpandUntil)
 	shownProgress += (number(glider, "LevelProgress") - shownProgress) * math.min(1, dt * 8)
 	fill.Size = UDim2.fromScale(math.clamp(shownProgress, 0, 1), 1)
 

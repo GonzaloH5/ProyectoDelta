@@ -1,6 +1,9 @@
 --!strict
 -- Interfaz adaptable: cada ScreenGui recibe un UIScale según el tamaño de pantalla (referencia 1280×720),
--- limitado a [MIN, MAX]. Los botones y paneles medidos en píxeles se ven proporcionados en móvil y en PC.
+-- limitado a [MIN, MAX], por el tamaño de HUD que elija el jugador (Settings.hudScale). Los botones y paneles
+-- medidos en píxeles se ven proporcionados en móvil y en PC.
+
+local Settings = require(script.Parent:WaitForChild("Settings"))
 
 local UiScale = {}
 
@@ -12,7 +15,7 @@ local scales: { UIScale } = {}
 function UiScale.get(): number
 	local camera = workspace.CurrentCamera
 	local size = if camera then camera.ViewportSize else REFERENCE
-	return math.clamp(math.min(size.X / REFERENCE.X, size.Y / REFERENCE.Y), MIN, MAX)
+	return math.clamp(math.min(size.X / REFERENCE.X, size.Y / REFERENCE.Y), MIN, MAX) * Settings.get().hudScale
 end
 
 local function refresh()
@@ -42,5 +45,10 @@ local function watchCamera()
 end
 workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(watchCamera)
 watchCamera()
+Settings.Changed:Connect(function(key: string)
+	if key == "hudScale" then
+		refresh()
+	end
+end)
 
 return UiScale

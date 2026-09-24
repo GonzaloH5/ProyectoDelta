@@ -68,6 +68,10 @@ FlightTester.NOVICE = { name = "novato", maxTurn = 1, maxLift = 1, lookahead = 9
 FlightTester.NOVICE_GAME = table.clone(FlightTester.NOVICE)
 FlightTester.NOVICE_GAME.name = "novato·j"
 FlightTester.NOVICE_GAME.mode = "game"
+-- El tranquilo en el juego de verdad.
+FlightTester.CALM_GAME = table.clone(FlightTester.CALM)
+FlightTester.CALM_GAME.name = "tranq·j"
+FlightTester.CALM_GAME.mode = "game"
 -- Dúo descuidado: cada uno con su retraso, se coloca con error y mira poco adelante (tools/sim/drivers/sloppy).
 FlightTester.SLOPPY = { name = "descuidado", mode = "game", maxTurn = 1, maxLift = 1, lookahead = 80, reaction = 0.6, reactions = { 0.5, 0.75 }, deadband = 0.6, jitter = 0.9, seed = 1 }
 
@@ -350,13 +354,14 @@ end
 --   · { piloto de juego, golpes }: llega sin perder el ala y con como mucho esos golpes (corazones perdidos).
 --   1-10  (capítulos 1-2, aprender): el novato llega en el juego sin golpes · el tranquilo pasa con ≥ 8
 --   11-25 (capítulos 3-5, practicar): el novato llega en el juego (≤ 2 golpes) · el tranquilo pasa con ≥ 4
---   26-50 (capítulos 6-10, dominar): el completo pasa con ≥ 4 (el tranquilo puede fallar)
+--   26-50 (capítulos 6-10, dominar): el completo pasa con ≥ 4 y el tranquilo llega en el juego sin golpes
+--         (en la regla estricta el tranquilo puede fallar: exige maniobras fuertes, pero se pueden hacer)
 -- Reglas de diseño que el piloto no mide: ≥ 2 s de vuelo (120 studs) entre dos obstáculos; como mucho una
 -- idea nueva por nivel; el último nivel de cada capítulo combina las ideas del capítulo.
 FlightTester.RULES = {
 	{ upTo = 10, checks = { { FlightTester.NOVICE_GAME, 0 }, { FlightTester.CALM, 8 } } },
 	{ upTo = 25, checks = { { FlightTester.NOVICE_GAME, 2 }, { FlightTester.CALM, 4 } } },
-	{ upTo = 50, checks = { { FlightTester.FULL, 4 } } },
+	{ upTo = 50, checks = { { FlightTester.FULL, 4 }, { FlightTester.CALM_GAME, 0 } } },
 }
 
 -- Tutorial (Map.Tutorial): es la primera vez que se vuela, así que el novato y el tranquilo pasan con ≥ 8.

@@ -23,6 +23,7 @@ local ServerStorage = game:GetService("ServerStorage")
 
 local Shared = ReplicatedStorage:WaitForChild("Glider")
 local Config = require(Shared.GliderConfig)
+local Analytics = require(script.Parent.Analytics)
 local GliderPhysics = require(Shared.GliderPhysics)
 local Checkpoints = require(script.Parent.Checkpoints)
 local CollisionGroups = require(script.Parent.CollisionGroups)
@@ -116,6 +117,7 @@ local function onSessionFinished(session: Session, reason: GliderSession.FinishR
 		-- Terminado o saltado (botón SKIP o Lobby): ya no vuelve a empezar solo.
 		for _, player in riders do
 			PlayerStats.markTutorialDone(player)
+			Analytics.funnel(player, Analytics.STEPS.TutorialFinished, { [Enum.AnalyticsCustomFieldKeys.CustomField01.Name] = reason } :: any)
 		end
 	end
 
@@ -223,6 +225,8 @@ local function startSession(players: { Player })
 		sessionOf[player] = session
 		if not devRuns[session] then
 			PlayerStats.runStarted(player)
+			Analytics.funnel(player, Analytics.STEPS.FirstDuoFlight)
+			Analytics.levelStarted(player, 1, (mainCourse:levelInfo(1)))
 		end
 	end
 end
@@ -259,7 +263,8 @@ local function reachCheckpoint(session: Session, checkpoint: Checkpoints.Checkpo
 	-- Medalla del nivel superado (antes de setCheckpoint, que reinicia los contadores del nivel):
 	-- oro = sin golpes · plata = sin perder el ala · bronce = superado. El tutorial no da medallas.
 	local tutorial = tutorialRuns[session] == true
-	local medal = if tutorial then nil elseif session.levelHits == 0 and session.levelLosses == 0 then 3 elseif session.levelLosses == 0 then 2 else 1
+	local levelHits, levelLosses = session.levelHits, session.levelLosses
+	local medal = if tutorial then nil elseif levelHits == 0 and levelLosses == 0 then 3 elseif levelLosses == 0 then 2 else 1
 	session:setCheckpoint(checkpoint.index, checkpoint.spawn, checkpoint.final)
 	publishLevel(session)
 	local counts = not devRuns[session] and not tutorial
@@ -287,8 +292,13 @@ local function reachCheckpoint(session: Session, checkpoint: Checkpoints.Checkpo
 		if counts then
 			-- Solo récords: el siguiente vuelo vuelve a empezar en la salida.
 			PlayerStats.levelCleared(player, checkpoint.index)
+			Analytics.funnel(player, Analytics.STEPS.FirstCheckpoint)
+			Analytics.levelCompleted(player, checkpoint.index, info.title or "", levelHits, levelLosses)
 			if checkpoint.final then
 				personalBest[player] = PlayerStats.courseCompleted(player, runTime)
+				Analytics.courseCompleted(player, runTime)
+			else
+				Analytics.levelStarted(player, checkpoint.index + 1, info.nextTitle or "")
 			end
 		end
 	end
@@ -310,6 +320,13 @@ end
 
 Lobby.start({ isBusy = isBusy, onDuoReady = startSession })
 
+Players.PlayerAdded:Connect(function(player)
+	Analytics.funnel(player, Analytics.STEPS.Joined)
+end)
+for _, player in Players:GetPlayers() do
+	Analytics.funnel(player, Analytics.STEPS.Joined)
+end
+
 -- La primera vez que alguien entra (sin TutorialDone guardado) se le ofrece el tutorial en pantalla
 -- ("TutorialOffer"); el cliente responde con "TutorialAnswer" (true = jugar). Se espera a que su personaje
 -- esté en el lobby; si no aparece en ~30 s o ya está volando, no se ofrece.
@@ -330,6 +347,7 @@ PlayerStats.onLoaded(function(player: Player, stats: PlayerStats.Stats)
 			if player.Parent == Players and not isBusy(player) then
 				tutorialOffered[player] = true
 				remote:FireClient(player, "TutorialOffer")
+				Analytics.funnel(player, Analytics.STEPS.TutorialOffered)
 			end
 			return
 		end
@@ -370,6 +388,7 @@ remote.OnServerEvent:Connect(function(player: Player, kind: unknown, value: unkn
 		if tutorialOffered[player] then
 			tutorialOffered[player] = nil
 			PlayerStats.markTutorialDone(player)
+			Analytics.funnel(player, Analytics.STEPS.TutorialAnswered, { [Enum.AnalyticsCustomFieldKeys.CustomField01.Name] = if value == true then "play" else "skip" } :: any)
 			if value == true then
 				startTutorial(player)
 			end
@@ -470,6 +489,7 @@ RunService.Heartbeat:Connect(function(rawDt)
 		if wasFlying[session] and session.flight.state == "Ended" and not session.completed and not devRuns[session] and not tutorialRuns[session] then
 			for _, player in session:riders() do
 				PlayerStats.crashed(player)
+				Analytics.wingLost(player, levelOf(session))
 			end
 		end
 		if flying then
@@ -519,5 +539,6 @@ Players.PlayerRemoving:Connect(function(player)
 	sessionOf[player] = nil
 	messageWindow[player] = nil
 	lastCallout[player] = nil
+	Analytics.forget(player)
 	tutorialOffered[player] = nil
 end)

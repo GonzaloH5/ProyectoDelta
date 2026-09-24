@@ -25,6 +25,9 @@ Settings.RANGES = Config.SettingsRanges
 
 local values: Values = table.clone(Settings.DEFAULTS) :: any
 local changed = Instance.new("BindableEvent")
+local SAVE_DELAY = 0.6 -- s sin cambios antes de enviar al servidor (al arrastrar un deslizador llegan muchos)
+local unsaved: { [string]: any } = {}
+local saveToken = 0
 Settings.Changed = changed.Event -- (key: string, value: any)
 
 local function sanitize(key: string, value: any): any
@@ -55,7 +58,15 @@ function Settings.set(key: string, value: any, save: boolean?)
 	(values :: any)[key] = clean
 	changed:Fire(key, clean)
 	if save ~= false then
-		remote:FireServer("Settings", { [key] = clean })
+		unsaved[key] = clean
+		saveToken += 1
+		local mine = saveToken
+		task.delay(SAVE_DELAY, function()
+			if mine == saveToken and next(unsaved) ~= nil then
+				remote:FireServer("Settings", unsaved)
+				unsaved = {}
+			end
+		end)
 	end
 end
 

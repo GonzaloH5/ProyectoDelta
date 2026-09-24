@@ -12,17 +12,20 @@ El mapa (Workspace, incluidos `AlaDelta` y `Lobby`) vive en el archivo del place
 ## Ciclo de juego
 
 Lobby → dos jugadores sobre una plataforma `DuoPad` → cuenta atrás → se clona un ala para ese dúo en la salida
-→ vuelan → cada **isla de descanso es un checkpoint** → al chocar, el mismo dúo reaparece en su último checkpoint
-→ botón **LOBBY** (cualquiera de los dos, con confirmación) o aterrizar tras la meta → el dúo vuelve al lobby.
+→ vuelan → cada **isla de descanso es un checkpoint** → los golpes quitan **corazones** (3); sin corazones el ala se
+pierde y el mismo dúo reaparece en su último **punto seguro** → botón **LOBBY** (cualquiera de los dos, con
+confirmación) o aterrizar tras la meta → el dúo vuelve al lobby (pantalla de resultados).
 Si uno de los dos se va del juego o muere, la partida se cancela y el otro vuelve al lobby (igual que el botón).
 El juego está en **inglés** (textos de interfaz, carteles, títulos de nivel y de bioma); el código y sus comentarios, en español.
 
 - **Checkpoints** (`src/server/Checkpoints.luau`): al cruzar la `CheckpointZone` de `RestIslandNN` (o la línea de meta,
   con el ancho de todo el valle) ambos ven la pantalla de checkpoint (`CheckpointBanner`): nivel superado, el siguiente,
-  progreso en rombos, color del bioma y aviso de bioma nuevo. Desde ahí reaparecen tras chocar, a la altura de vuelo
-  sobre la isla. El botón **RESET (R)** (pruebas) también vuelve al último checkpoint.
+  progreso en rombos, color del bioma, aviso de bioma nuevo, **medalla** del nivel y "CHAPTER N CLEAR!" al terminar
+  un capítulo. Los corazones se rellenan en cada checkpoint. El botón **RESPAWN (R)** vuelve al último punto seguro.
 - Meta: cruzarla muestra "COURSE COMPLETE!" con el tiempo del recorrido y, en cuanto responde la clasificación,
-  "NEW DUO RECORD · #N ON THE BOARD" o "NEW PERSONAL BEST!"; al aterrizar en la isla final el dúo vuelve al lobby.
+  "NEW DUO RECORD · #N ON THE BOARD" o "NEW PERSONAL BEST!"; el ala **aterriza** en la pista de la isla final, se
+  desliza hasta pararse y el dúo vuelve al lobby, donde ve la **pantalla de resultados** (tiempo, medallas, alas
+  perdidas, golpes y puesto) con botón CONTINUE.
 - Los atributos `BiomeTitle` y `BiomeColor` de cada isla los escribe `MapBuilder`: tras cambiar biomas, regenerar el mapa.
 
 - `Workspace.AlaDelta` es la **plantilla**: marca dónde y con qué forma sale cada ala. Al empezar el juego se guarda en ServerStorage.
@@ -58,24 +61,29 @@ En Studio, modo edición, barra de comandos:
 
 ```lua
 require(game.ServerScriptService.Glider.DevTools.MapBuilder:Clone()).build()      -- regenera el mapa
-require(game.ServerScriptService.Glider.DevTools.FlightTester:Clone()).runAll()   -- piloto automático (novato / tranquilo / completo)
+require(game.ServerScriptService.Glider.DevTools.FlightTester:Clone()).runAll()   -- piloto automático (novato·juego / tranquilo / completo)
 require(game.ServerScriptService.Glider.DevTools.FlightTester:Clone()).checkRules() -- regla de dificultad (from, to opcionales)
 require(game.ServerScriptService.Glider.DevTools.FlightTester:Clone()).checkTutorial() -- tutorial: novato y tranquilo ≥ 8
 ```
 
-**Regla de dificultad** (`FlightTester.RULES`, la comprueba `checkRules()`): cada tramo exige que ciertos pilotos
-lleguen a la salida sin que el ala, inflada N studs por cada lado, toque nada (el techo no cuenta).
+**Regla de dificultad** (`FlightTester.RULES`, la comprueba `checkRules()`). El piloto vuela con las mismas
+ecuaciones que el juego (`GliderPhysics`) en dos modos:
+- **estricto**: el ala entera, inflada N studs por cada lado, no puede tocar nada (el techo no cuenta); sin
+  corazones, sin asistencia y sin viento. Mide la holgura de diseño.
+- **juego** (`·j`): como en el juego de verdad (contactos que resbalan, 3 corazones, asistencia del nivel, puntos
+  seguros). Mide si un dúo llega sin perder el ala y con cuántos golpes.
 
-| Niveles | Tiene que pasar | Margen mínimo |
-|---|---|---|
-| 1-10 (capítulos 1-2: aprender) | novato y tranquilo | novato ≥ 4 · tranquilo ≥ 8 |
-| 11-25 (capítulos 3-5: practicar) | tranquilo | ≥ 4 |
-| 26-50 (capítulos 6-10: dominar) | completo (el tranquilo puede fallar) | ≥ 4 |
+| Niveles | Tiene que pasar |
+|---|---|
+| 1-10 (capítulos 1-2: aprender) | novato en el juego sin golpes · tranquilo estricto ≥ 8 |
+| 11-25 (capítulos 3-5: practicar) | novato en el juego con ≤ 2 golpes · tranquilo estricto ≥ 4 |
+| 26-50 (capítulos 6-10: dominar) | completo estricto ≥ 4 · tranquilo en el juego sin golpes |
 
 Además (de diseño, no lo mide el piloto): ≥ 2 s de vuelo (120 studs) entre dos obstáculos, como mucho una idea nueva
 por nivel, y el último nivel de cada capítulo combina las ideas del capítulo.
 
-- Cada nivel es un **corredor guiado**: paredes laterales y suelo (mortales) + techo semitransparente (se roza, limita la altura).
+- Cada nivel es un **corredor guiado**: paredes laterales y suelo + techo translúcido (se roza, limita la altura).
+  Antes de cada obstáculo, dos **chevrones** luminosos apuntan hacia donde hay que ir; la salida tiene un marco luminoso.
 - El trazado se escribe como órdenes (`straight`, `arc`, `rise`, `width`, `height`, `mark`) y los obstáculos van dentro:
   `ridge` (colina: subir), `lintel` (viga colgada: bajar), `promontory` (saliente de pared: apartarse),
   `pillar` (pilar exento en rombo, del suelo al techo: rodearlo por el lado que marca el anillo), `guide` (anillo visual).
@@ -89,7 +97,7 @@ por nivel, y el último nivel de cada capítulo combina las ideas del capítulo.
 - **Trazado en filas**: para que 50 niveles no se alejen del origen ni se crucen, los niveles 1-10 van hacia +X y cada
   pareja 11-12, 21-22, 31-32 y 41-42 gira 90° + 90°: cinco filas alternas (+X / -X) separadas ~4.000 studs
   (como mínimo ~2.000 entre paredes de filas vecinas). El resto de niveles acaba con el mismo rumbo con el que empieza.
-  Total: ~177.000 studs (~49 min a 60 studs/s sin choques), ~70.000 piezas; el punto más lejano está a ~40.000 del origen.
+  Total: ~177.000 studs (~49 min a 60 studs/s sin choques), ~80.000 piezas; el punto más lejano está a ~40.000 del origen.
 
 ### Los 50 niveles
 
@@ -143,15 +151,15 @@ require(game.ServerScriptService.Glider.DevTools.MapDresser:Clone()).audit(works
   al Cañón rojo). Plantas y fondos de valle quedan fuera del volumen de vuelo (encima de los muros, bajo las islas).
 - `DRESS_LEVELS` (en `MapBuilder.luau`) limita hasta qué nivel se viste (ahora: 50, todo el recorrido).
 - Helpers low-poly compartidos con el lobby: `LowPoly.luau` (árbol, cactus, pino, palmera, cristales, árbol calcinado…).
-- Regenerar los 50 niveles en Studio tarda un rato (~70.000 piezas): lanzar `build()` y guardar el place al terminar.
+- Regenerar los 50 niveles en Studio tarda un rato (~80.000 piezas): lanzar `build()` y guardar el place al terminar.
 
 ## Estructura
 
 | Carpeta | En Studio | Contenido |
 |---|---|---|
-| `src/shared` | `ReplicatedStorage.Glider` | `GliderConfig` (todos los parámetros), `GliderMath`, `GliderRemote` |
-| `src/server` | `ServerScriptService.Glider` | `GliderController` (sesiones, lobby, checkpoints), `GliderSession` (un ala + su dúo + vuelo + reaparición), `Checkpoints` (islas de descanso y meta), `Lobby` (plataformas), `RiderRig` (colgar jugadores + IK), `CollisionGroups`, `PlayerStats` (récords guardados), `DuoLeaderboard` (clasificación de dúos y tablón), `TutorialBot` (bot compañero del tutorial), `LevelStreaming`, `DevTools` (MapBuilder, MapDresser, Biomes, LobbyBuilder, LowPoly, FlightTester: solo edición) |
-| `src/client` | `StarterPlayerScripts.GliderClient` | `InputAxis` (teclado/mando/táctil), `FlightHud`, `GliderCamera`, `ResetButton`, `LobbyButton`, `CheckpointBanner`, `TutorialHints` (oferta, indicaciones y SKIP del tutorial), `UiScale`, `OtherDuos` |
+| `src/shared` | `ReplicatedStorage.Glider` | `GliderConfig` (todos los parámetros), `GliderPhysics` (ecuaciones de vuelo, contactos y corazones: servidor, FlightTester y sim), `GliderMath`, `SoundConfig` (huecos de sonido), `GliderRemote` |
+| `src/server` | `ServerScriptService.Glider` | `GliderController` (sesiones, lobby, checkpoints), `GliderSession` (un ala + su dúo + vuelo + reaparición), `Checkpoints` (islas de descanso y meta), `Lobby` (plataformas), `RiderRig` (colgar jugadores + IK), `CollisionGroups`, `PlayerStats` (récords, medallas y ajustes guardados), `DuoLeaderboard` (clasificación de dúos y tablón), `TutorialBot` (bot compañero del tutorial), `LevelStreaming`, `Analytics` (eventos del Creator Dashboard), `DevTools` (MapBuilder, MapDresser, Biomes, LobbyBuilder, LowPoly, FlightTester: solo edición) |
+| `src/client` | `StarterPlayerScripts.GliderClient` | `InputAxis` (teclado/mando/táctil), `FlightHud`, `GliderCamera`, `ResetButton` (Respawn), `LobbyButton`, `CheckpointBanner`, `ResultsScreen`, `Callouts` (avisos al compañero), `FlightAudio`, `FlightEffects`, `BiomeLighting`, `Backdrop`, `Ambient`, `ScreenFade`, `Settings` + `SettingsPanel`, `TutorialHints` (oferta, indicaciones y SKIP del tutorial), `UiScale`, `OtherDuos` |
 | `tools/sim` | — (no se sincroniza) | Imitación de Roblox para probar el mapa y el FlightTester sin Studio (ver abajo) |
 
 ## Rendimiento: carga del mapa (streaming)
@@ -174,13 +182,16 @@ siempre en la salida.
 | Dato | Qué es |
 |---|---|
 | `HighestLevel` | mayor nivel superado (checkpoint más alto cruzado; el total = llegó a la meta) |
-| `BestTime` | mejor tiempo del recorrido completo (cronómetro `RunTime`, choques incluidos) |
-| `Completions` · `Runs` · `Crashes` | recorridos terminados · vuelos empezados · choques |
+| `BestTime` | mejor tiempo del recorrido completo (cronómetro `RunTime`, reapariciones incluidas) |
+| `Completions` · `Runs` · `Crashes` | recorridos terminados · vuelos empezados · alas perdidas |
+| `Medals` | mejor medalla de cada nivel (oro = sin golpes · plata = sin perder el ala · bronce = superado) |
+| `Settings` | ajustes del jugador (volúmenes, temblor de cámara, reducir movimiento, tamaño del HUD) |
 
 - Se ven en la lista de jugadores (`leaderstats`: **Level** y **Best**) y como atributos del `Player` para la interfaz.
 - Los vuelos de prueba con `DevStartLevel` no cuentan.
 - Se guarda al salir, cada 2 minutos si hay cambios y al cerrar el servidor. El guardado fusiona con lo que ya hay
-  (máximo, mínimo y suma), así que no se pierde nada aunque la carga falle o el jugador esté en dos servidores.
+  (máximo, mínimo y suma; medallas con máximo por nivel; ajustes: el último cambio gana), así que no se pierde nada
+  aunque la carga falle o el jugador esté en dos servidores.
 - DataStore `PlayerStats_v1`, clave `Player_<UserId>`.
 - Para probarlo en Studio: *Game Settings → Security → Enable Studio Access to API Services* (el place tiene que
   estar publicado). Sin eso, el juego funciona igual y solo avisa de que no guarda.
@@ -192,13 +203,13 @@ siempre en la salida.
   guarda `TutorialDone` y no vuelve a salir. (En Studio sin API Services no se guarda: sale en cada Play.)
 - **Recorrido** `Map.Tutorial` (lo genera `MapBuilder.build()`, lejos del lobby y del recorrido): tres tramos cortos
   vestidos de Pradera, cada uno con su checkpoint: **Climb** (una loma), **Dive** (una viga) y **Turn** (izquierda y
-  derecha). Si chocas, repites el tramo. Al terminar: "TUTORIAL COMPLETE!" y vuelves al lobby.
+  derecha). Si pierdes el ala, reapareces en el último punto seguro. Al terminar: "TUTORIAL COMPLETE!" y vuelves al lobby.
 - **Bot compañero** (`TutorialBot`): un personaje R15 colgado en el otro extremo de la barra que **lleva el rumbo**:
   mira la línea ideal del tramo ~110 studs por delante (como el piloto del `FlightTester`) y se coloca en la barra
   para que el peso de los dos gire el ala hacia ella. Yendo recto eso es el espejo de tu posición, así que **subir
   y bajar depende de ti**; en las curvas se va hacia ese lado (y te pide acompañarlo).
 - **Indicaciones grandes en pantalla** (`TutorialHints`, atributo `TutorialHint` del ala) y botón **SKIP TUTORIAL**.
-- No cuenta para estadísticas, choques ni clasificación. La imagen de tutorial antigua queda desactivada
+- No cuenta para estadísticas, alas perdidas ni clasificación. La imagen de tutorial antigua queda desactivada
   (`ShowTutorialOnJoin = false`).
 - Las indicaciones de cada tramo (`coach` en `TUTORIAL_LEVELS` de `MapBuilder`) se guardan en el atributo `Coach`
   del nivel: el juego no necesita los DevTools.
@@ -224,15 +235,64 @@ dos desde la salida; las pruebas con `DevStartLevel` y los vuelos en solitario n
 | Acción | Teclado | Mando | Móvil |
 |---|---|---|---|
 | Moverse por la barra | A / D o flechas | gatillos L2 / R2 (también cruceta y stick) | botones grandes `<` `>` abajo a los lados |
-| Volver al último checkpoint (pruebas) | R | Y | botón RESET (arriba a la derecha) |
+| Reaparecer en el último punto seguro | R | Y | botón RESPAWN (arriba a la derecha) |
+| Avisos al compañero (Climb · Dive · Left · Right · Nice) | 1 · 2 · 3 · 4 · 5 | A · B · L1 · R1 | botón 💬 |
 | Volver al lobby (con confirmación) | botón LOBBY | X dos veces | botón LOBBY |
+| Ajustes | botón ⚙ (izquierda) | — | botón ⚙ |
 
-- **HUD** (`FlightHud`): nivel `LEVEL NN / total` con título, franja del color del bioma y barra de progreso
-  (atributo `LevelProgress`: el servidor proyecta el ala sobre la `Route` del nivel), cronómetro del recorrido
-  (`RunTime`: desde el primer despegue hasta la meta, choques incluidos), barra del ala con tu marca y la del compañero
-  e indicadores CLIMB / DIVE / GLIDE y de giro, cuenta atrás "2 · 1 · GO!" y avisos de choque / meta.
+- **HUD** (`FlightHud`): tarjeta `LEVEL NN / total` con título, franja del color del bioma y barra de progreso
+  (atributo `LevelProgress`), que se encoge unos segundos después de empezar cada nivel; tarjeta grande "LEVEL NN ·
+  título" al empezar cada nivel; **corazones** arriba al centro (parpadean al perder uno); cronómetro compacto
+  (`RunTime`); barra del ala con tu marca y la del compañero, **flechas de hacia dónde se mueve cada uno** e
+  "IN SYNC!" cuando os movéis a la vez; indicadores CLIMB / DIVE / GLIDE y de giro; cuenta atrás "2 · 1 · GO!".
   Los valores internos solo con `ShowDebug = true` en `GliderConfig`.
-- **Interfaz adaptable** (`UiScale`): cada pantalla se escala respecto a 1280×720 (entre 0.6 y 1.2).
+- **Ajustes** (`SettingsPanel`, botón ⚙): volumen general, efectos y ambiente, temblor de cámara, reducir movimiento
+  (sin alabeo de cámara, cambios de FOV, temblores ni líneas de velocidad) y tamaño del HUD. Se guardan en `PlayerStats`.
+- **Interfaz adaptable** (`UiScale`): cada pantalla se escala respecto a 1280×720 (entre 0.6 y 1.2) × tamaño del HUD.
+
+## Sensación de vuelo (lo que perdona el juego)
+
+Todo el vuelo está en `GliderPhysics` (compartido): el servidor, el `FlightTester` y `tools/sim` usan las mismas
+ecuaciones. Los números, en `GliderConfig`.
+
+- **Mandos legibles**: respuesta lineal con zona muerta (estar "más o menos" nivelados = vuelo recto y a la misma
+  altura), alabeo sin tambaleo, viento suave, deslizamiento por la barra más rápido.
+- **Tocar no es morir**: el ala resbala a lo largo de paredes y obstáculos. Un golpe fuerte (≈17° o más contra la
+  superficie) o un roce largo (1,2 s) quitan **1 de 3 corazones** y dan 1,5 s de invulnerabilidad. Suelos y tops de
+  obstáculos nunca quitan corazones (el ala se levanta sola sobre el suelo). El núcleo que choca es un 75 % del ala.
+- **Sin corazones**: voltereta corta (0,6 s), fundido y reaparición en el último **punto seguro** (checkpoint o un
+  tramo de vuelo limpio de los últimos ~8 s, despejado y mirando a la línea ideal) con cuenta atrás de 1 s.
+- **Asistencia**: el servidor suma un poco de giro hacia la línea ideal cuando nadie gira fuerte (completa en los
+  capítulos 1-2, se desvanece hasta el 6). Tras 3 alas perdidas en un nivel, **viento a favor**: más asistencia y
+  ayuda para subir o bajar hasta el siguiente checkpoint.
+- **Inercia suave**: en picado se gana algo de velocidad y subiendo se pierde un poco (`MomentumEnabled`).
+- **Cámara** (`GliderCamera`): anticipa las curvas (mira un poco hacia la línea ideal que viene, atributo
+  `RouteAhead`) y las subidas/bajadas, nunca atraviesa paredes ni techos, FOV con tope y temblor al golpear.
+- **Aterrizaje** en la meta: el ala toca la pista de la isla, se desliza y se para.
+
+## Sonido, efectos y ambiente
+
+- **Sonidos** (`SoundConfig` + `FlightAudio`): cada hueco lleva un id. Vienen puestos sonidos de Roblox como
+  provisionales (viento, cuenta atrás, golpe, "Close!", checkpoint, aterrizaje); los huecos vacíos (`""`: roce,
+  rasante, ala perdida, medalla, capítulo, meta, clic…) no suenan hasta que pongas ids tuyos (`rbxassetid://…`).
+- **Efectos** (`FlightEffects`): chispas al golpear y rozar, polvo rasante y al aterrizar, "Close!" al pasar muy cerca
+  sin tocar, parpadeo del ala invulnerable, burbuja al reaparecer, columna de luz y confeti en cada checkpoint,
+  líneas de velocidad al picar y remolinos en las puntas en giros fuertes. Los cuerpos se balancean en la barra.
+- **Luz por bioma** (`BiomeLighting`): hora del día, bruma y color del horizonte de cada bioma, con transición; al
+  volver al lobby se restaura la del place. Los presets están al principio del archivo.
+- **Fondo y vida** (`Backdrop`, `Ambient`): montañas y nubes en el horizonte del color del bioma; polen, hojas,
+  nieve, brasas o destellos alrededor de la cámara y pájaros en los valles abiertos (menos con calidad gráfica baja).
+- **Mapa** (`MapDresser`): bordes dentados en lo alto de las paredes, puerta de capítulo (estandarte y mástiles) en
+  el primer nivel de cada capítulo, un hito con bandera en cada isla y pista de aterrizaje con cartel FINISH en la meta.
+  Tras actualizar, **regenera el mapa** con `MapBuilder.build()` para verlos (y los ajustes de los niveles 1, 9, 10 y
+  del tramo DIVE del tutorial).
+
+## Analytics
+
+`Analytics` (servidor) manda eventos al Creator Dashboard (*Analytics*): embudo de entrada (entra → se le ofrece el
+tutorial → responde → lo termina o salta → primer vuelo en dúo → primer checkpoint), progresión por nivel (empieza /
+supera, con golpes y alas perdidas), alas perdidas por nivel y recorridos completados. Los vuelos de prueba y el
+tutorial no cuentan como progresión. Si el servicio falla, el juego sigue igual.
 
 ## Probar
 
@@ -249,15 +309,16 @@ código real de `src/` fuera de Studio. Necesita Python 3 y el ejecutable `luau`
 python3 tools/sim/run.py drivers/check.luau              # genera el mapa y pasa FlightTester.checkRules()
 python3 tools/sim/run.py drivers/check.luau fine=true    # márgenes finos (1, 2, 3… studs) para ver la holgura
 python3 tools/sim/run.py drivers/pilots.luau from=11     # los 3 pilotos en cada nivel (perfil de dificultad)
+python3 tools/sim/run.py drivers/sloppy.luau             # dúo descuidado en el juego: golpes y alas perdidas por nivel
+python3 tools/sim/run.py drivers/trace.luau level=10 pilot=novice from=60 to=75   # traza un vuelo del FlightTester
 python3 tools/sim/run.py drivers/audit.luau              # regla de oro (MapDresser.audit) en todos los niveles
 python3 tools/sim/run.py drivers/layout.luau             # trazado: extensión, separación entre filas y SVG
-python3 tools/sim/run.py drivers/leaderboard.luau        # DuoLeaderboard y PlayerStats con DataStores falsos
+python3 tools/sim/run.py drivers/leaderboard.luau        # DuoLeaderboard y PlayerStats (medallas, ajustes) con DataStores falsos
 python3 tools/sim/run.py drivers/tutorial.luau           # Map.Tutorial y el bot (indicaciones, rumbo, colocación)
 python3 tools/sim/run.py drivers/tutorialflight.luau     # vuela el tutorial con el bot (player=idle: sin moverse)
 python3 tools/sim/run.py drivers/selftest.luau           # pruebas de la propia imitación
 ```
 
 Límites: el `Random` no es el de Roblox (el vestido aleatorio sale distinto que en Studio) y la plantilla `AlaDelta`
-no está en el repo, así que se usa un ala de 32 de envergadura y 4 de alto (`span=`, `wingTop=` para cambiarla). Los
-niveles 1-10, ajustados en Studio, también pasan la regla en la imitación (varios justo en el límite). Lo que decide
-es `checkRules()` en Studio.
+no está en el repo, así que se usa un ala de 32 de envergadura y 4 de alto (`span=`, `wingTop=` para cambiarla).
+Lo que decide es `checkRules()` en Studio.

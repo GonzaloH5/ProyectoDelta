@@ -1778,14 +1778,45 @@ local function buildCourse(root: Instance, levels, startPos: Vector3, options): 
 			local gate = frameAt(finishFrames, 150)
 			ring(finish, "FinishGate", "Finish", frameCFrame(gate), 170, 120, 10, 10)
 			marker(finish, "FinishLine", frameCFrame(gate), Vector3.new(170, 120, 4))
+			-- Cartel FINISH sobre el arco (visual).
+			local sign = newPart(finish, "FinishSign", "Finish", Vector3.new(130, 26, 2), frameCFrame(gate) * CFrame.new(0, 60 + 10 + 18, 0))
+			sign.Color = Color3.fromRGB(25, 40, 30)
+			sign.Material = Enum.Material.SmoothPlastic
+			local signGui = Instance.new("SurfaceGui")
+			signGui.Face = Enum.NormalId.Back -- mira hacia el ala que llega
+			signGui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+			signGui.PixelsPerStud = 8
+			signGui.LightInfluence = 0
+			signGui.Parent = sign
+			local signText = Instance.new("TextLabel")
+			signText.BackgroundTransparency = 1
+			signText.Size = UDim2.fromScale(1, 1)
+			signText.Font = Enum.Font.GothamBlack
+			signText.TextScaled = true
+			signText.TextColor3 = COLORS.Finish
+			signText.Text = "FINISH"
+			signText.Parent = signGui
 			local landing = frameAt(finishFrames, 480)
 			island(finish, landing.pos - Vector3.new(0, 70, 0), landing.heading, 420, 360, COLORS.Finish, landing.pos.Y)
-			-- Techo de aterrizaje: baja hasta la isla (tocar la isla termina el recorrido).
+			-- Techo de aterrizaje: baja hasta la isla y guía el ala hacia ella (tocar la isla termina el recorrido).
+			-- Invisible: se roza como un techo, pero lo que se ve es la pista de aterrizaje.
 			local a = frameAt(finishFrames, 170).pos + Vector3.new(0, 60, 0)
 			local b = frameAt(finishFrames, 460).pos + Vector3.new(0, -58, 0)
-			newPart(finish, "LandingCeiling", "Cliff", Vector3.new(360, SLAB_T, (b - a).Magnitude), CFrame.lookAt((a + b) / 2, b))
+			local guide = newPart(finish, "LandingCeiling", "Cliff", Vector3.new(360, SLAB_T, (b - a).Magnitude), CFrame.lookAt((a + b) / 2, b))
+			guide.Transparency = 1
+			guide.CastShadow = false
 			cliffFace(finish, "EndWall", finishFrames[#finishFrames], nil, VALLEY_EXTENTS)
 			dressModel(finish, index, index)
+			-- Pista de aterrizaje sobre la isla (visual): franja clara y chevrones hacia delante.
+			local pad = CFrame.lookAt(landing.pos - Vector3.new(0, 70 - 0.3, 0), landing.pos - Vector3.new(0, 70 - 0.3, 0) + forwardOf(landing.heading))
+			local strip = newPart(finish, "LandingStrip", "Finish", Vector3.new(70, 0.4, 300), pad)
+			strip.Color = Color3.fromRGB(245, 250, 245)
+			strip.Transparency = 0.35
+			for k = -1, 1 do
+				for _, side in { -1, 1 } do
+					newPart(finish, "LandingChevron", "Finish", Vector3.new(26, 0.5, 4), pad * CFrame.new(side * 9, 0.2, k * 80) * CFrame.Angles(0, -side * math.rad(35), 0)) -- extremos interiores delante: apunta hacia delante
+				end
+			end
 			marker(devSpawns, "Finish", CFrame.lookAt(gate.pos - forwardOf(gate.heading) * 150, gate.pos))
 			total += 900
 		end

@@ -34,9 +34,11 @@ for name, slot in SoundConfig do
 	sounds[name] = sound
 end
 
-local function effectsVolume(): number
+local AMBIENT = { Wind = true, Skim = true } -- van con el volumen de ambiente; el resto, con el de efectos
+
+local function volumeFor(name: string): number
 	local values = Settings.get()
-	return values.masterVolume * values.effectsVolume
+	return values.masterVolume * (if AMBIENT[name] then values.ambienceVolume else values.effectsVolume)
 end
 
 -- Sonido suelto (se superpone si ya sonaba). pitch opcional multiplica el tono base.
@@ -46,7 +48,7 @@ function FlightAudio.play(name: string, pitch: number?)
 	if not (sound and slot) or slot.loop then
 		return
 	end
-	local volume = slot.volume * effectsVolume()
+	local volume = slot.volume * volumeFor(name)
 	if volume <= 0.001 then
 		return
 	end
@@ -66,7 +68,7 @@ local function setLoop(name: string, level: number, pitch: number?)
 	if not (sound and slot) then
 		return
 	end
-	local volume = slot.volume * level * effectsVolume()
+	local volume = slot.volume * level * volumeFor(name)
 	sound.Volume = GliderMath.approach(sound.Volume, volume, 8, 1 / 60)
 	sound.PlaybackSpeed = (slot.pitch or 1) * (pitch or 1)
 	if volume > 0.01 and not sound.IsPlaying then
