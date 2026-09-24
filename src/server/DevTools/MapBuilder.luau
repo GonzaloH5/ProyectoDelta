@@ -1695,7 +1695,9 @@ local function buildCourse(root: Instance, levels, startPos: Vector3, options): 
 		model:SetAttribute("BiomeTitle", biome.title or biome.name)
 		model:SetAttribute("BiomeColor", biome.accent)
 		if options.dress and index <= options.dressUpTo then
-			local added = MapDresser.dress(model, biome, { wallT = WALL_T, rim = RIM, seed = options.seedBase + index * 7919 + #model.Name, index = index })
+			-- Primer nivel de un capítulo (solo en el recorrido principal): puerta de capítulo en la entrada.
+			local chapter = if options.chapters and model.Name:match("^Level") and (index - 1) % Biomes.CHAPTER_LENGTH == 0 then (index - 1) // Biomes.CHAPTER_LENGTH + 1 else nil
+			local added = MapDresser.dress(model, biome, { wallT = WALL_T, rim = RIM, seed = options.seedBase + index * 7919 + #model.Name, index = index, chapter = chapter })
 			table.insert(dressed, string.format("%s +%d", model.Name, added))
 		end
 	end
@@ -1804,7 +1806,7 @@ function MapBuilder.build(options): string
 	map:SetAttribute("DevStartLevel", 0) -- 1-50 = despegar directamente en ese nivel (pruebas)
 	map.Parent = workspace
 
-	local summary, total, dressed = buildCourse(map, LEVELS, START, { dress = dress, dressUpTo = DRESS_LEVELS, seedBase = 20260922, moveTemplate = true })
+	local summary, total, dressed = buildCourse(map, LEVELS, START, { dress = dress, dressUpTo = DRESS_LEVELS, seedBase = 20260922, moveTemplate = true, chapters = true })
 
 	local tutorial = Instance.new("Folder")
 	tutorial.Name = "Tutorial"

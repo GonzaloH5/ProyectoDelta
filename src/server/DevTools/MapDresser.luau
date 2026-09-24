@@ -179,6 +179,30 @@ local function cap(ctx, parent, part: BasePart, treeSpacing: number?)
 	end
 end
 
+-- Borde dentado: dientes de roca sobre el borde superior de una pared de corredor (por encima del techo, así
+-- que nunca tocan el paso). Rompen la línea recta del cañón vista a través del techo y desde los valles.
+-- Usan su propio generador aleatorio: no cambian el resto del vestido.
+local function rims(ctx, parent, part: BasePart)
+	local cf, size = part.CFrame, part.Size
+	if size.Z < 70 then
+		return
+	end
+	local rng = Random.new(math.floor(part.Position.X * 7 + part.Position.Z * 13) % 2147483647)
+	local thickness = math.max(size.X - 4, 4)
+	local z = -size.Z / 2 + rng:NextNumber(5, 25)
+	while z < size.Z / 2 - 12 do
+		local width = rng:NextNumber(26, 46)
+		local height = rng:NextNumber(12, 38)
+		local center = cf * CFrame.new(0, size.Y / 2 + height / 2, math.min(z + width / 2, size.Z / 2 - width / 2))
+		-- Dos cuñas espalda con espalda = un diente triangular a lo largo de la pared.
+		for _, sign in { -1, 1 } do
+			local tooth = ctx.kit.part(parent, "Rim", "Rock", Vector3.new(thickness, height, width / 2), center * CFrame.new(0, 0, sign * width / 4) * CFrame.Angles(0, if sign > 0 then math.pi else 0, 0), "Wedge") -- las dos suben hacia el centro del diente
+			tooth.Color = if rng:NextNumber() < 0.5 then ctx.biome.rock[1] else ctx.biome.rockDark
+		end
+		z += width + rng:NextNumber(30, 80)
+	end
+end
+
 -- Pared de corredor o de valle: color base + estratos y facetas en la cara interior.
 local function wall(ctx, parent, part: BasePart, side: number, isValley: boolean)
 	if isValley then
@@ -186,6 +210,7 @@ local function wall(ctx, parent, part: BasePart, side: number, isValley: boolean
 	else
 		-- Corredor: solo entre el suelo (pie + 30) y el techo (borde - rim); lo demás queda oculto.
 		strata(ctx, parent, part, "X", side, WALL_FOOT - 2, ctx.rim - 2)
+		rims(ctx, parent, part)
 	end
 	-- Las facetas quedan entre el suelo (pie + 30) y algo por debajo del borde superior.
 	facets(ctx, parent, part, side, -part.Size.Y / 2 + 40, part.Size.Y / 2 - 70)
@@ -444,6 +469,39 @@ local function entrance(ctx, parent, face: Instance, level: Instance)
 	end
 	label("LEVEL " .. (level.Name:match("%d+") or "?"), 0.06, 0.52, Enum.Font.GothamBlack, Color3.new(1, 1, 1))
 	label(level:GetAttribute("Title") or "", 0.6, 0.32, Enum.Font.GothamBold, ctx.biome.guide)
+
+	-- Puerta de capítulo (primer nivel de cada capítulo): estandarte grande encima del cartel y dos mástiles
+	-- con banderolas del color del bioma a los lados del arco. Todo sobre la cara del acantilado, fuera del paso.
+	if ctx.chapter then
+		local bannerY = openTop + 14 + 4 + 36 + 8 + 26
+		local banner = kit.part(parent, "ChapterBanner", "Sign", Vector3.new(math.min(2 * hw + 40, 300), 52, 3), frame * CFrame.new(0, bannerY, z + 1.5))
+		banner.Color = ctx.biome.accent:Lerp(Color3.new(0, 0, 0), 0.35)
+		local bannerGui = Instance.new("SurfaceGui")
+		bannerGui.Face = Enum.NormalId.Back
+		bannerGui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+		bannerGui.PixelsPerStud = 8
+		bannerGui.LightInfluence = 0
+		bannerGui.Parent = banner
+		for _, line in { { string.format("CHAPTER %d", ctx.chapter), 0.05, 0.42, Enum.Font.GothamBlack }, { string.upper(ctx.biome.title or ctx.biome.name), 0.5, 0.42, Enum.Font.GothamBold } } do
+			local l = Instance.new("TextLabel")
+			l.BackgroundTransparency = 1
+			l.Position = UDim2.fromScale(0.04, line[2])
+			l.Size = UDim2.fromScale(0.92, line[3])
+			l.Font = line[4]
+			l.TextScaled = true
+			l.TextColor3 = Color3.new(1, 1, 1)
+			l.Text = line[1]
+			l.Parent = bannerGui
+		end
+		for _, s in { -1, 1 } do
+			local x = s * (hw + 40)
+			local poleHeight = height + 90
+			kit.part(parent, "BannerPole", "Stone", Vector3.new(4, poleHeight, 4), frame * CFrame.new(x, openBottom + poleHeight / 2, z + 6))
+			local flag = kit.part(parent, "BannerFlag", "Stone", Vector3.new(16, 44, 1), frame * CFrame.new(x - s * 10, openBottom + poleHeight - 26, z + 6))
+			flag.Color = ctx.biome.accent
+			kit.gem(parent, "BannerGem", "ArchGem", 7, frame * CFrame.new(x, openBottom + poleHeight + 5, z + 6))
+		end
+	end
 end
 
 -- ── Valles ────────────────────────────────────────────────────────────
@@ -575,6 +633,20 @@ local function island(ctx, parent, model: Instance)
 	end
 	-- Vegetación baja: nada en el centro (spawn) ni en la franja delantera (despegue / paso del ala).
 	local apothem = radius * LowPoly.SQRT3 / 2
+
+	-- Hito de la isla (al lado contrario del faro, lejos del paso del ala): obelisco con gema del color del bioma
+	-- y bandera. Se reconoce desde lejos y dice "aquí se descansa".
+	local landmark = top * CFrame.new(-apothem * 0.62, 0, apothem * 0.25)
+	for k, segment in { { 7, 12 }, { 5.5, 12 }, { 4, 10 } } do
+		local y = if k == 1 then 6 elseif k == 2 then 18 else 29
+		kit.hex(parent, "Obelisk", "Stone", segment[1], segment[2], landmark * CFrame.new(0, y, 0))
+	end
+	kit.gem(parent, "ObeliskGem", "ArchGem", 8, landmark * CFrame.new(0, 39, 0))
+	kit.part(parent, "FlagPole", "WoodDark", Vector3.new(1.5, 30, 1.5), landmark * CFrame.new(12, 15, 0))
+	local flag = kit.part(parent, "Flag", "Stone", Vector3.new(0.6, 9, 14), landmark * CFrame.new(12, 25, 7))
+	flag.Color = biome.accent
+	local landmarkLocal = top:PointToObjectSpace(landmark.Position)
+	table.insert(avoid, { x = landmarkLocal.X, z = landmarkLocal.Z, r = 24 })
 	local function spot(size)
 		for _ = 1, 30 do
 			local phi = rng:NextNumber(0, 2 * math.pi)
@@ -628,7 +700,7 @@ function MapDresser.dress(model: Instance, biome, options): number
 	options = options or {}
 	local rng = Random.new(options.seed or 1)
 	local kit = LowPoly.kit({ colors = palette(biome), style = STYLE, rng = rng, attributes = { Dressing = true } })
-	local ctx = { kit = kit, rng = rng, biome = biome, wallT = options.wallT or 24, rim = options.rim or 60 }
+	local ctx = { kit = kit, rng = rng, biome = biome, wallT = options.wallT or 24, rim = options.rim or 60, chapter = options.chapter }
 	local root = LowPoly.folder(model, "Dressing")
 	local folders = {}
 	local function folder(name: string): Folder

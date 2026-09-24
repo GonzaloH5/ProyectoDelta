@@ -25,6 +25,9 @@ local FlightAudio = require(script:WaitForChild("FlightAudio"))
 local FlightEffects = require(script:WaitForChild("FlightEffects"))
 local ResultsScreen = require(script:WaitForChild("ResultsScreen"))
 local Settings = require(script:WaitForChild("Settings"))
+local BiomeLighting = require(script:WaitForChild("BiomeLighting"))
+local Backdrop = require(script:WaitForChild("Backdrop"))
+local Ambient = require(script:WaitForChild("Ambient"))
 
 local player = Players.LocalPlayer
 Tutorial.show() -- al unirse a la sala
@@ -162,6 +165,9 @@ RunService:BindToRenderStep("GliderClient", Enum.RenderPriority.Camera.Value + 1
 	FlightHud.update(mountedGlider, mountedSide, dt)
 	FlightAudio.update(mountedGlider)
 	FlightEffects.update(mountedGlider, dt)
+	BiomeLighting.update(mountedGlider)
+	Backdrop.update(mountedGlider, dt)
+	Ambient.update(mountedGlider, dt)
 	TutorialHints.update(mountedGlider)
 	OtherDuos.update(gliderFolder, mountedGlider, dt)
 end)
