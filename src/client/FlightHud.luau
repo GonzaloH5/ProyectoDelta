@@ -3,8 +3,9 @@
 --   · arriba izquierda: LEVEL NN / total, título, franja del color del bioma y barra de progreso del nivel
 --   · arriba derecha:   cronómetro del recorrido (RunTime)
 --   · arriba centro:    corazones del ala (Hearts / MaxHearts): parpadean al perder uno
---   · abajo centro:     la barra del ala con tu marca y la de tu compañero, zona central, e indicadores
---                       CLIMB / DIVE / GLIDE (sale de LiftInput) y de giro << >> (sale de BalanceInput)
+--   · abajo centro:     la barra del ala con tu marca y la de tu compañero (con flechas de hacia dónde se está
+--                       moviendo cada uno: LeftAxis / RightAxis), zona central, indicadores CLIMB / DIVE / GLIDE
+--                       (LiftInput) y de giro << >> (BalanceInput), y "IN SYNC!" cuando os movéis a la vez
 --   · centro:           cuenta atrás grande "3 · 2 · 1 · GO!" y avisos de choque / meta
 --   · depuración:       valores internos solo con Config.ShowDebug
 
@@ -147,7 +148,7 @@ end
 local barPanel = panel(gui, "Bar")
 barPanel.AnchorPoint = Vector2.new(0.5, 1)
 barPanel.Position = UDim2.new(0.5, 0, 1, -18)
-barPanel.Size = UDim2.fromOffset(380, 92)
+barPanel.Size = UDim2.fromOffset(460, 108)
 local turnLeft = text(barPanel, Enum.Font.GothamBlack, 22)
 turnLeft.Position = UDim2.fromOffset(14, 6)
 turnLeft.Size = UDim2.fromOffset(60, 26)
@@ -163,8 +164,8 @@ liftText.Position = UDim2.new(0.5, 0, 0, 7)
 liftText.Size = UDim2.fromOffset(160, 24)
 local bar = Instance.new("Frame")
 bar.AnchorPoint = Vector2.new(0.5, 0)
-bar.Position = UDim2.new(0.5, 0, 0, 44)
-bar.Size = UDim2.new(1, -40, 0, 10)
+bar.Position = UDim2.new(0.5, 0, 0, 52)
+bar.Size = UDim2.new(1, -48, 0, 12)
 bar.BackgroundColor3 = Color3.fromRGB(70, 78, 95)
 bar.BorderSizePixel = 0
 bar.Parent = barPanel
@@ -184,7 +185,7 @@ local function marker(color: Color3, caption: string): (Frame, TextLabel)
 	local dot = Instance.new("Frame")
 	dot.AnchorPoint = Vector2.new(0.5, 0.5)
 	dot.Position = UDim2.fromScale(0.5, 0.5)
-	dot.Size = UDim2.fromOffset(22, 22)
+	dot.Size = UDim2.fromOffset(26, 26)
 	dot.BackgroundColor3 = color
 	dot.BorderSizePixel = 0
 	dot.ZIndex = 3
@@ -201,6 +202,29 @@ end
 local meDot = marker(ME_COLOR, "YOU")
 local partnerDot = marker(PARTNER_COLOR, "PARTNER")
 meDot.ZIndex = 4
+
+-- Flecha de intención encima de cada marca: hacia dónde se está deslizando ahora mismo.
+local function intentArrow(dot: Frame, color: Color3): TextLabel
+	local arrow = text(dot, Enum.Font.GothamBlack, 18, color)
+	arrow.AnchorPoint = Vector2.new(0.5, 1)
+	arrow.Position = UDim2.new(0.5, 0, 0, -4)
+	arrow.Size = UDim2.fromOffset(40, 20)
+	stroke(arrow, 1.5, 0.3)
+	return arrow
+end
+local meArrow = intentArrow(meDot, ME_COLOR)
+local partnerArrow = intentArrow(partnerDot, PARTNER_COLOR)
+
+-- "IN SYNC!": los dos se mueven a la vez (mismo lado = giro juntos; lados opuestos = abrir/cerrar juntos).
+local syncChip = text(barPanel, Enum.Font.GothamBlack, 16, CLIMB_COLOR)
+syncChip.AnchorPoint = Vector2.new(0.5, 1)
+syncChip.Position = UDim2.new(0.5, 0, 0, -4)
+syncChip.Size = UDim2.fromOffset(160, 22)
+syncChip.Text = "IN SYNC!"
+syncChip.Visible = false
+stroke(syncChip, 2, 0.2)
+local syncScale = Instance.new("UIScale")
+syncScale.Parent = syncChip
 
 -- Cuenta atrás y avisos (centro).
 local countdown = text(gui, Enum.Font.GothamBlack, 100) -- 100 = TextSize máximo de Roblox
@@ -240,6 +264,13 @@ local lastState: string? = nil
 local lastCountdown = -1
 local shownHearts = Config.WingHearts
 local blinkClock = 0
+local syncTime, syncShownUntil, syncCooldownUntil = 0, 0, 0
+local SYNC_HOLD = 0.35 -- s moviéndose a la vez para que cuente
+local SYNC_SHOW, SYNC_COOLDOWN = 1.2, 5
+
+local function arrowFor(axis: number): string
+	return if axis < 0 then "◀" elseif axis > 0 then "▶" else ""
+end
 local shownProgress = 0
 local lastRunTime, runTimeClock = -1, 0
 
@@ -302,8 +333,27 @@ function FlightHud.update(glider: Model?, side: number, dt: number)
 	local theirs = number(glider, if side < 0 then "RightPosition" else "LeftPosition")
 	local partnerId = glider:GetAttribute(if side < 0 then "RightUserId" else "LeftUserId")
 	meDot.Position = UDim2.fromScale(0.5 + math.clamp(mine, -1, 1) * 0.5, 0.5)
-	partnerDot.Visible = type(partnerId) == "number" and partnerId ~= 0
+	local hasPartner = type(partnerId) == "number" and partnerId ~= 0
+	partnerDot.Visible = hasPartner
 	partnerDot.Position = UDim2.fromScale(0.5 + math.clamp(theirs, -1, 1) * 0.5, 0.5)
+	local myAxis = number(glider, if side < 0 then "LeftAxis" else "RightAxis")
+	local theirAxis = number(glider, if side < 0 then "RightAxis" else "LeftAxis")
+	meArrow.Text = arrowFor(myAxis)
+	partnerArrow.Text = arrowFor(theirAxis)
+
+	-- IN SYNC!
+	local now = os.clock()
+	if hasPartner and state == "Flying" and myAxis ~= 0 and theirAxis ~= 0 then
+		syncTime += dt
+		if syncTime >= SYNC_HOLD and now >= syncCooldownUntil then
+			syncShownUntil, syncCooldownUntil = now + SYNC_SHOW, now + SYNC_COOLDOWN
+			syncScale.Scale = 1.5
+			TweenService:Create(syncScale, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+		end
+	else
+		syncTime = 0
+	end
+	syncChip.Visible = now < syncShownUntil
 
 	local lift = number(glider, "LiftInput") - Config.NeutralLiftPoint
 	if lift > LIFT_BAND then

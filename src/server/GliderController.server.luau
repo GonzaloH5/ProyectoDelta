@@ -298,6 +298,7 @@ end)
 -- Filtro previo contra inundar el remoto: tipo de mensaje válido y tope de mensajes por jugador
 -- (el doble del límite de Axis; la sesión aplica además sus propios límites y el cooldown de Reset).
 local messageWindow: { [Player]: { start: number, count: number } } = {}
+local lastCallout: { [Player]: number } = {}
 local function allowMessage(player: Player, kind: unknown): boolean
 	if type(kind) ~= "string" or #kind > 32 then
 		return false
@@ -333,6 +334,16 @@ remote.OnServerEvent:Connect(function(player: Player, kind: unknown, value: unkn
 	end
 	if kind == "Lobby" then
 		session:finish("lobby") -- cualquiera de los dos cancela el vuelo del dúo
+	elseif kind == "Callout" then
+		-- Aviso rápido al compañero ("Climb!", "Dive!"…): se reenvía a los dos del ala, con pausa mínima.
+		local now = os.clock()
+		local side = session:slotOf(player)
+		if type(value) == "number" and Config.Callouts[value] and side and now - (lastCallout[player] or -math.huge) >= Config.CalloutCooldown then
+			lastCallout[player] = now
+			for _, rider in session:riders() do
+				remote:FireClient(rider, "Callout", { side = side, id = value, userId = player.UserId })
+			end
+		end
 	elseif kind == "SkipTutorial" then
 		if tutorialRuns[session] then
 			session:finish("lobby")
@@ -459,5 +470,6 @@ Players.PlayerRemoving:Connect(function(player)
 	end
 	sessionOf[player] = nil
 	messageWindow[player] = nil
+	lastCallout[player] = nil
 	tutorialOffered[player] = nil
 end)

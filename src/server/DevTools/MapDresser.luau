@@ -274,7 +274,9 @@ local CLOUD_TIER = 3 -- grosor de cada piso de nube: cuelgan como mucho 2 × CLO
 local CLOUD_SHADE = rgb(160, 182, 230) -- panza azulada: más marcada cuanto más abajo
 -- Vista desde abajo, la losa solo recibe luz ambiente y el blanco sale gris apagado. Con Neon al 50 % del color
 -- de nube brilla como una capa cubierta (sin llegar al umbral del Bloom), y las nubes sombreadas resaltan.
-local CEILING_GLOW = 0.5
+local CEILING_GLOW = 0.9
+-- Translúcido (antes opaco): el cielo se ve a través del velo luminoso, así el corredor se siente al aire libre.
+local CEILING_TRANSPARENCY = 0.55
 
 -- La losa sigue siendo la colisión (se roza) y se ve como la base luminosa de un mar de nubes. Debajo cuelgan
 -- pocas nubes grandes low-poly, repartidas por DISTANCIA (el reparto sigue de losa en losa: las curvas, con
@@ -286,7 +288,8 @@ local function ceiling(ctx, parent, part: BasePart)
 	local cloud = ctx.biome.cloud
 	part.Color = Color3.new(cloud.R * CEILING_GLOW, cloud.G * CEILING_GLOW, cloud.B * CEILING_GLOW)
 	part.Material = Enum.Material.Neon
-	part.Transparency = 0 -- opaca: se lee como techo continuo, no como cielo abierto
+	part.Transparency = CEILING_TRANSPARENCY -- velo translúcido: se ve el cielo (sin sensación de túnel) y se
+	-- sigue leyendo dónde está el techo gracias a las nubes que cuelgan de él
 	part.CastShadow = false
 	local bottom = -size.Y / 2
 	local halfX = size.X / 2 - ctx.wallT

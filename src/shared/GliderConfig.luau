@@ -156,6 +156,21 @@ local GliderConfig = {
 	CameraTrackCorrection = 6, -- rapidez con que la predicción local se corrige hacia la posición real (1/s)
 	CameraSnapDistance = 25, -- si la predicción se aleja más que esto (reset), la cámara salta
 	CameraRouteLookahead = 150, -- studs de línea ideal por delante que el servidor publica (RouteAhead)
+	CameraRouteBlend = 0.35, -- fracción del ángulo hacia la línea ideal que la cámara mira de más (anticipa curvas)
+	CameraRouteMaxAngle = 20, -- grados máximos de esa anticipación
+	CameraVerticalLead = 0.45, -- studs que el punto de mira se adelanta por cada stud/s de subida o bajada
+	CameraMaxFovBoost = 8, -- grados máximos de FOV extra (el picado ya no abre la cámara sin límite)
+	CameraMaxFovDrop = 4, -- grados máximos de FOV menos al subir
+	CameraCollisionRadius = 2, -- studs de separación con paredes y techos entre la cámara y el ala
+	CameraPullInResponse = 20, -- rapidez al acercarse por una pared (alta: nunca se ve a través)
+	CameraReleaseResponse = 3, -- rapidez al volver a su distancia
+	CameraShakeImpact = 0.8, -- studs de temblor al perder un corazón
+	CameraShakeScrape = 0.2, -- studs de temblor mientras roza
+	CameraShakeDecay = 6, -- rapidez con que se calma el temblor (1/s)
+
+	-- ── Avisos rápidos al compañero (teclas 1-5) ───────────────────────
+	Callouts = table.freeze({ "Climb!", "Dive!", "Left!", "Right!", "Nice!" }),
+	CalloutCooldown = 0.8, -- segundos mínimos entre dos avisos del mismo jugador
 
 	-- ── Red ────────────────────────────────────────────────────────────
 	MaxInputsPerSecond = 30, -- el servidor ignora mensajes por encima de esto

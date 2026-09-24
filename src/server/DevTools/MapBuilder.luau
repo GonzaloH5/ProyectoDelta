@@ -53,6 +53,8 @@ local COLORS = {
 	Obstacle = Color3.fromRGB(215, 80, 60), -- lomas, vigas y salientes
 	Guide = Color3.fromRGB(255, 205, 40), -- anillos guía (visuales)
 	Portal = Color3.fromRGB(235, 240, 255), -- boca de entrada de cada nivel (visual)
+	Chevron = Color3.fromRGB(255, 255, 255), -- flechas que anuncian la maniobra antes de cada obstáculo (visual)
+	ExitGlow = Color3.fromRGB(255, 225, 150), -- marco luminoso de la salida del corredor (visual)
 	Grass = Color3.fromRGB(95, 165, 80),
 	Rock = Color3.fromRGB(115, 100, 88),
 	Beacon = Color3.fromRGB(255, 200, 90),
@@ -62,6 +64,8 @@ local STYLE = {
 	Ceiling = { transparency = 0.65, noShadow = true },
 	Guide = { neon = true, visual = true },
 	Portal = { neon = true, visual = true },
+	Chevron = { neon = true, visual = true, transparency = 0.1 },
+	ExitGlow = { neon = true, visual = true, transparency = 0.2 },
 	Finish = { neon = true, visual = true },
 	Beacon = { neon = true },
 }
@@ -436,6 +440,45 @@ local function makeContext(level: Model, frames, marks)
 		local lane = (edge + wall) / 2
 		ctx.point(s, lane, 0)
 		ctx.guide(s, lane, 0, math.clamp(math.abs(wall - edge) - 24, 40, 100), 85)
+	end
+
+	-- AVISOS: antes de cada obstáculo, dos flechas (chevrones) que apuntan hacia donde hay que ir (arriba,
+	-- abajo o a un lado) a 200 y 130 studs, a medio camino del paso. Solo el primer punto de cada obstáculo y si
+	-- no hay otro obstáculo justo antes (sin amontonar). Visuales: no chocan ni cuentan en las pruebas.
+	function ctx.telegraphs()
+		local telegraphs = newFolder(level, "Telegraphs")
+		local lastS = -math.huge
+		local features = {}
+		for _, p in ctx.points do
+			if p.feature then
+				table.insert(features, p)
+			end
+		end
+		table.sort(features, function(a, b)
+			return a.s < b.s
+		end)
+		for _, p in features do
+			local previous = lastS
+			lastS = p.s
+			local du, dv = p.u or 0, p.v or 0
+			if p.s - previous < 260 or math.max(math.abs(du), math.abs(dv)) < 15 then
+				continue
+			end
+			local angle = if math.abs(dv) >= math.abs(du) then (if dv > 0 then math.pi / 2 else -math.pi / 2) else (if du > 0 then 0 else math.pi)
+			for index, lead in { { 200, 0.45 }, { 130, 0.8 } } do
+				local s = p.s - lead[1]
+				if s < 60 then
+					continue
+				end
+				local f = at(s)
+				local tip = frameCFrame(f) * CFrame.new(du * lead[2], dv * lead[2], 0) * CFrame.Angles(0, 0, angle)
+				local length, spread = 18, math.rad(38)
+				for _, sign in { -1, 1 } do
+					local offset = CFrame.new(-math.cos(spread) * length / 2, sign * math.sin(spread) * length / 2, 0)
+					newPart(telegraphs, string.format("Chevron%02d", index), "Chevron", Vector3.new(length, 2.6, 1), tip * offset * CFrame.Angles(0, 0, -sign * spread))
+				end
+			end
+		end
 	end
 
 	return ctx
@@ -1706,7 +1749,10 @@ local function buildCourse(root: Instance, levels, startPos: Vector3, options): 
 
 		local ctx = makeContext(level, frames, marks)
 		spec.features(ctx)
+		ctx.telegraphs()
 		buildRoute(level, frames, ctx)
+		-- Salida: marco luminoso (se ve desde lejos: "ahí termina el corredor").
+		ring(level, "ExitGlow", "ExitGlow", frameCFrame(last) * CFrame.new(0, 0, 14), last.width - 12, last.height - 12, 4, 3)
 		dressModel(level, index, index)
 
 		local spawnPos = first.pos - forwardOf(first.heading) * 150

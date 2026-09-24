@@ -20,10 +20,15 @@ local CheckpointBanner = require(script:WaitForChild("CheckpointBanner"))
 local OtherDuos = require(script:WaitForChild("OtherDuos"))
 local Tutorial = require(script:WaitForChild("Tutorial"))
 local TutorialHints = require(script:WaitForChild("TutorialHints"))
+local Callouts = require(script:WaitForChild("Callouts"))
 
 local player = Players.LocalPlayer
 Tutorial.show() -- al unirse a la sala
 local gliderFolder = workspace:WaitForChild(Config.GliderFolderName)
+
+local mountedSide = 0 -- 0 no montado, -1 slot 1, 1 slot 2
+local mountedGlider: Model? = nil
+local sentAxis = 0
 
 remote.OnClientEvent:Connect(function(kind: unknown, data: unknown)
 	if kind == "Checkpoint" and type(data) == "table" then
@@ -32,6 +37,8 @@ remote.OnClientEvent:Connect(function(kind: unknown, data: unknown)
 		CheckpointBanner.showResult(data :: any)
 	elseif kind == "TutorialOffer" then
 		TutorialHints.offer()
+	elseif kind == "Callout" and type(data) == "table" then
+		Callouts.show(data :: any, mountedSide)
 	end
 end)
 
@@ -47,9 +54,6 @@ task.spawn(function()
 	end
 end)
 
-local mountedSide = 0 -- 0 no montado, -1 slot 1, 1 slot 2
-local mountedGlider: Model? = nil
-local sentAxis = 0
 
 -- El ala de mi dúo (si voy colgado de alguna) y en qué slot.
 local function findMyGlider(): (Model?, number)
@@ -102,6 +106,7 @@ local function mount(glider: Model, root: BasePart, side: number)
 	InputAxis.setEnabled(true)
 	ResetButton.setVisible(true)
 	LobbyButton.setVisible(true)
+	Callouts.setVisible(glider:GetAttribute("Tutorial") ~= true) -- en el tutorial el compañero es un bot
 end
 
 local function unmount()
@@ -116,6 +121,7 @@ local function unmount()
 	InputAxis.setEnabled(false)
 	ResetButton.setVisible(false)
 	LobbyButton.setVisible(false)
+	Callouts.setVisible(false)
 end
 
 RunService:BindToRenderStep("GliderClient", Enum.RenderPriority.Camera.Value + 1, function(dt)
