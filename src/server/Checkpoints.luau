@@ -18,7 +18,7 @@ local Checkpoints = {}
 Checkpoints.__index = Checkpoints
 
 -- Por nivel: línea ideal (Entry → Route → Exit) con distancias acumuladas, título y color del bioma (HUD).
-type LevelInfo = { points: { Vector3 }, lengths: { number }, total: number, title: string, color: Color3? }
+type LevelInfo = { points: { Vector3 }, lengths: { number }, total: number, title: string, color: Color3?, biome: string? }
 
 export type Course = typeof(setmetatable(
 	{} :: {
@@ -89,7 +89,8 @@ function Checkpoints.new(map: Instance?): Course
 			lengths[i] = total
 		end
 		local _, color = biomeOf(level)
-		levels[index] = { points = points, lengths = lengths, total = total, title = levelTitle(map, index), color = color }
+		local biome = level:GetAttribute("Biome")
+		levels[index] = { points = points, lengths = lengths, total = total, title = levelTitle(map, index), color = color, biome = if type(biome) == "string" then biome else nil }
 	end
 
 	local previousBiome = biomeOf(map:FindFirstChild("StartIsland"))
@@ -141,6 +142,12 @@ function Checkpoints.levelInfo(self: Course, index: number): (string, Color3?)
 		return "", nil
 	end
 	return info.title, info.color
+end
+
+-- Bioma del nivel (atributo Biome del modelo: la iluminación del cliente cambia con él).
+function Checkpoints.biomeOf(self: Course, index: number): string?
+	local info = self.levels[index]
+	return info and info.biome
 end
 
 -- Fracción recorrida del nivel (0-1): proyección de la posición sobre su línea ideal, sin retroceder a

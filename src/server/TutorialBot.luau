@@ -14,7 +14,9 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local Config = require(ReplicatedStorage:WaitForChild("Glider"):WaitForChild("GliderConfig"))
+local Glider = ReplicatedStorage:WaitForChild("Glider")
+local Config = require(Glider:WaitForChild("GliderConfig"))
+local GliderPhysics = require(Glider:WaitForChild("GliderPhysics"))
 
 local TutorialBot = {}
 
@@ -68,26 +70,10 @@ function TutorialBot.cuesOf(level: Instance?): { Cue }
 	return cues
 end
 
-local function invertCurve(value: number, exponent: number): number
-	value = math.clamp(value, -1, 1)
-	return math.sign(value) * math.abs(value) ^ (1 / exponent)
-end
-
 -- Balance (−1…1, positivo = girar a la izquierda) para ir hacia `goal` desde `position` con rumbo `forward`.
 function TutorialBot.steer(position: Vector3, forward: Vector3, goal: Vector3?): number
-	if not goal then
-		return 0
-	end
-	local toGoal = (goal - position) * Vector3.new(1, 0, 1)
-	local flat = forward * Vector3.new(1, 0, 1)
-	if toGoal.Magnitude < 1e-3 or flat.Magnitude < 1e-3 then
-		return 0
-	end
-	flat = flat.Unit
-	-- Ángulo con signo: positivo si el objetivo queda a la izquierda (Y de forward × toGoal).
-	local alpha = math.atan2(flat:Cross(toGoal).Y, flat:Dot(toGoal))
-	local wantTurn = math.clamp(math.deg(2 * Config.ForwardSpeed * math.sin(alpha) / math.max(toGoal.Magnitude, 1)), -Config.MaxTurnRate, Config.MaxTurnRate)
-	return invertCurve(wantTurn / Config.MaxTurnRate, Config.BalanceCurve)
+	local wantTurn = GliderPhysics.pursuitTurn(position, forward, goal)
+	return GliderPhysics.balanceInputFor(wantTurn / Config.MaxTurnRate)
 end
 
 -- Un paso del bot. slots = huecos de la sesión (bot en SIDE, jugador en -SIDE); balance = giro deseado

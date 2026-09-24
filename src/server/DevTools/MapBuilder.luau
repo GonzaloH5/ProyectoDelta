@@ -394,7 +394,8 @@ local function makeContext(level: Model, frames, marks)
 
 	-- VIGA colgada del techo (cara frontal vertical): hay que pasar por DEBAJO.
 	-- reach = cuánto baja por debajo de la línea central (obliga a bajar al menos eso).
-	function ctx.lintel(s, reach)
+	-- below = studs por debajo de la viga a los que pasa la línea ideal (35 por defecto).
+	function ctx.lintel(s, reach, below)
 		local f = at(s)
 		local depth = f.height / 2 + reach
 		local ceilingY = f.pos.Y + f.height / 2
@@ -402,7 +403,7 @@ local function makeContext(level: Model, frames, marks)
 		local top = ceilingY + RIM
 		local center = Vector3.new(f.pos.X, (top + bottom) / 2, f.pos.Z)
 		newPart(features, nextName("Lintel"), "Obstacle", Vector3.new(f.width + 2 * WALL_T, top - bottom, 40), CFrame.lookAt(center, center + forwardOf(f.heading)))
-		local v = -(reach + 35)
+		local v = -(reach + (below or 35))
 		ctx.point(s, 0, v)
 		ctx.guide(s, 0, v)
 	end
@@ -484,7 +485,7 @@ local LEVELS = {
 		features = function(c)
 			c.ridge(650, 20)
 			c.lintel(1150, 20)
-			c.ridge(1650, 20)
+			c.ridge(1650, 15)
 			c.lintel(2100, 20)
 		end,
 	},
@@ -595,9 +596,9 @@ local LEVELS = {
 			c.promontory(2000, 1, 100)
 		end,
 	},
-	{ -- 09: varias correcciones seguidas en un corredor más justo (240 × 180), sin ventanas.
+	{ -- 09: varias correcciones seguidas en un corredor más justo (260 × 180), sin ventanas.
 		title = "Quick Corrections",
-		width = 240,
+		width = 260,
 		height = 180,
 		path = {
 			{ kind = "straight", length = 200 },
@@ -617,10 +618,10 @@ local LEVELS = {
 			-- Ajustado a la regla de dificultad (FlightTester.checkRules): el primer saliente deja 160 de
 			-- reacción tras la curva, salientes de 50 y la loma sube a 20° (por debajo de los 23° que sube el ala).
 			local a = c.mark("salientes")
-			c.promontory(a + 200, 1, 50)
-			c.promontory(a + 430, -1, 50)
+			c.promontory(a + 200, 1, 42)
+			c.promontory(a + 430, -1, 42)
 			local b = c.mark("lomaViga")
-			c.ridge(b + 200, 15, 20, 25)
+			c.ridge(b + 200, 10, 17, 25)
 			c.lintel(b + 500, 15)
 		end,
 	},
@@ -636,7 +637,7 @@ local LEVELS = {
 			{ kind = "mark", name = "slalom" },
 			{ kind = "straight", length = 1000 }, -- slalom
 			{ kind = "arc", angle = 40, radius = 360, rise = 40 }, -- giro a la izquierda subiendo
-			{ kind = "straight", length = 300, width = 210, height = 170 }, -- embudo (210 por la regla de dificultad)
+			{ kind = "straight", length = 300, width = 240, height = 170 }, -- embudo (240 por la regla de dificultad)
 			{ kind = "mark", name = "final" },
 			{ kind = "straight", length = 620 }, -- colina + viga
 			{ kind = "straight", length = 250 },
@@ -648,7 +649,7 @@ local LEVELS = {
 			c.promontory(a + 540, 1, 65)
 			c.promontory(a + 840, -1, 65)
 			local b = c.mark("final")
-			c.ridge(b + 230, 10, 20, 25)
+			c.ridge(b + 230, 5, 17, 25)
 			c.lintel(b + 560, 15)
 		end,
 	},
@@ -1599,7 +1600,7 @@ local TUTORIAL_LEVELS = {
 		height = 230,
 		path = { { kind = "straight", length = 900 } },
 		features = function(c)
-			c.lintel(470, 12)
+			c.lintel(470, 9, 50)
 		end,
 		coach = {
 			{ 0, 0.55, "Both move IN to the center to dive under the beam!" },

@@ -121,6 +121,11 @@ function RiderRig.setLateral(rig: Rig, lateral: number)
 	rig.weld.C0 = RiderRig.offsetFor(lateral)
 end
 
+-- Como setLateral, con el cuerpo balanceado `swing` grados alrededor de las manos (péndulo lateral).
+function RiderRig.setPose(rig: Rig, lateral: number, swing: number)
+	rig.weld.C0 = CFrame.new(lateral, 0, 0) * CFrame.Angles(0, 0, math.rad(swing)) * CFrame.new(0, -Config.HangDepth, Config.HangBack) * hangRotation()
+end
+
 function RiderRig.detach(rig: Rig)
 	for _, instance in rig.created do
 		instance:Destroy()

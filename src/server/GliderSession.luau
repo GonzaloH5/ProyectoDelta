@@ -2,16 +2,20 @@
 -- Una sesión = un ala delta clonada de la plantilla + un dúo de jugadores + su vuelo.
 -- Autoridad total del servidor: los clientes solo envían su eje A/D (-1, 0, 1).
 --
--- Cadena de vuelo:
+-- Cadena de vuelo (ecuaciones en GliderPhysics, compartidas con FlightTester y tools/sim):
 --   posición de ambos en la barra → LiftInput (distancia al centro) / BalanceInput (centro de masa)
---   → velocidad vertical (suavizada) + alabeo (muelle) → giro de rumbo (suavizado)
---   → LinearVelocity (avance constante + vertical) y AlignOrientation (rumbo, pitch, roll)
+--   → velocidad vertical (suavizada) + alabeo (muelle) → giro de rumbo (suavizado) [+ asistencia]
+--   → LinearVelocity (avance + vertical) y AlignOrientation (rumbo, pitch, roll)
+-- Tocar algo no es morir: el ala resbala y pierde corazones (golpes fuertes o roces largos). Sin corazones se
+-- pierde el ala: voltereta corta y reaparición en el último PUNTO SEGURO (checkpoint o un tramo reciente de
+-- vuelo limpio que guarda el controlador).
 -- Los "slots" 1 y 2 solo indican dónde empieza cada uno; ninguno tiene un lado propio.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Glider.GliderConfig)
 local GliderMath = require(ReplicatedStorage.Glider.GliderMath)
+local GliderPhysics = require(ReplicatedStorage.Glider.GliderPhysics)
 local CollisionGroups = require(script.Parent.CollisionGroups)
 local RiderRig = require(script.Parent.RiderRig)
 
@@ -30,7 +34,7 @@ type Slot = {
 }
 
 -- lobby = el dúo pidió volver al lobby · completed = aterrizó tras cruzar la meta · empty = no queda nadie.
--- Un choque NO termina la sesión: el ala reaparece en su último checkpoint.
+-- Perder el ala NO termina la sesión: reaparece en su último punto seguro.
 export type FinishReason = "lobby" | "completed" | "empty"
 
 local GliderSession = {}
@@ -42,7 +46,8 @@ export type Session = typeof(setmetatable(
 		glider: Model,
 		root: BasePart,
 		respawnForward: Vector3, -- rumbo al reaparecer (salida o último checkpoint)
-		respawnCFrame: CFrame, -- dónde reaparece el ala tras chocar o con Reset
+		respawnCFrame: CFrame, -- salida o último checkpoint
+		safeCFrame: CFrame, -- dónde reaparece el ala al perderla o con Respawn (checkpoint o punto seguro posterior)
 		checkpoint: number, -- niveles superados (0 = aún en el primero)
 		completed: boolean, -- cruzó la meta: al terminar el vuelo, el dúo vuelve al lobby
 		runTime: number, -- cronómetro del recorrido: desde el primer despegue hasta la meta (choques incluidos)
@@ -55,6 +60,19 @@ export type Session = typeof(setmetatable(
 		trailTransparency: number,
 		slots: { [number]: Slot },
 		flight: { [string]: any },
+		physics: GliderPhysics.State,
+		health: GliderPhysics.Health,
+		dims: GliderPhysics.Dimensions,
+		cleanTime: number, -- segundos seguidos de vuelo sin tocar nada
+		sinceSafePoint: number, -- segundos de vuelo desde el último punto seguro
+		levelLosses: number, -- alas perdidas desde el último checkpoint (viento a favor, medalla)
+		levelHits: number, -- golpes desde el último checkpoint (medalla)
+		windAssist: boolean,
+		assistGoal: Vector3?, -- punto de la línea ideal al que apunta la asistencia (lo pone el controlador)
+		assistStrength: number, -- 0-1 según el nivel (lo pone el controlador)
+		impacts: number, -- golpes (contador publicado: efectos en el cliente)
+		respawns: number, -- reapariciones (contador publicado)
+		crashFrom: CFrame?, -- dónde se perdió el ala (voltereta)
 		lastReset: number,
 		finished: boolean,
 		members: { Player },
@@ -251,6 +269,7 @@ function GliderSession.new(
 		root = root,
 		respawnForward = forward,
 		respawnCFrame = root.CFrame,
+		safeCFrame = root.CFrame,
 		checkpoint = startCheckpoint or 0,
 		completed = false,
 		runTime = 0,
@@ -263,22 +282,31 @@ function GliderSession.new(
 		trailTransparency = Config.TrailCalmTransparency,
 		slots = { [LEFT] = newSlot(LEFT), [RIGHT] = newSlot(RIGHT) },
 		flight = {
-			state = "Countdown", -- Countdown | Flying | Ended
+			state = "Countdown", -- Countdown | Flying | Ended (ala perdida) | Landed (meta)
 			timer = 0,
-			yaw = GliderMath.yawOf(forward),
-			verticalSpeed = 0,
-			roll = 0,
-			rollVelocity = 0,
-			pitch = 0,
-			pitchVelocity = 0,
-			turnRate = 0,
+			countdown = Config.CountdownTime, -- duración de la cuenta atrás actual (más corta al reaparecer)
 			time = 0,
 			broadcastTimer = 0,
 			liftInput = 0,
 			balanceInput = 0,
 			leftPosition = 0, -- posiciones efectivas (incluye el compañero fantasma en solitario)
 			rightPosition = 0,
+			scraping = false,
+			skimming = false,
 		},
+		physics = GliderPhysics.newState(GliderMath.yawOf(forward)),
+		health = GliderPhysics.newHealth(),
+		dims = { span = size.X, wingTop = wingTop },
+		cleanTime = 0,
+		sinceSafePoint = 0,
+		levelLosses = 0,
+		levelHits = 0,
+		windAssist = false,
+		assistGoal = nil,
+		assistStrength = 0,
+		impacts = 0,
+		respawns = 0,
+		crashFrom = nil,
 		lastReset = -math.huge,
 		finished = false,
 		members = table.clone(players),
@@ -289,6 +317,8 @@ function GliderSession.new(
 		self:_board(player, if index == 1 then LEFT else RIGHT)
 	end
 	glider:SetAttribute("Checkpoint", self.checkpoint)
+	glider:SetAttribute("Hearts", self.health.hearts)
+	glider:SetAttribute("MaxHearts", Config.WingHearts)
 	self:_setState("Countdown")
 	self:_publishSlots()
 	return self
@@ -310,9 +340,9 @@ end
 
 -- Estelas de viento: más marcadas cuanto más fuerte gira o más rápido cae en picado.
 function GliderSession._updateTrails(self: Session)
-	local flight = self.flight
-	local turning = math.abs(flight.turnRate) / Config.MaxTurnRate
-	local diving = math.max(0, -flight.verticalSpeed) / Config.MaxFallSpeed
+	local physics = self.physics
+	local turning = math.abs(physics.turnRate) / Config.MaxTurnRate
+	local diving = math.max(0, -physics.verticalSpeed) / Config.MaxFallSpeed
 	local intensity = math.clamp(turning + diving, 0, 1)
 	local transparency = Config.TrailCalmTransparency
 		+ (Config.TrailIntenseTransparency - Config.TrailCalmTransparency) * intensity
@@ -448,7 +478,7 @@ function GliderSession.handleMessage(self: Session, player: Player, kind: unknow
 	elseif kind == "Reset" then
 		if now - self.lastReset >= Config.ResetCooldown then
 			self.lastReset = now
-			self:resetToCheckpoint()
+			self:respawn(true) -- botón Respawn: vuelve al último punto seguro
 		end
 	end
 end
@@ -456,48 +486,103 @@ end
 -- ── Ciclo de vuelo ────────────────────────────────────────────────────
 
 -- Guarda un checkpoint alcanzado: a partir de ahora el ala reaparece ahí (centro de la isla, a la altura
--- de vuelo, mirando al siguiente nivel). final = meta: al terminar este vuelo el dúo vuelve al lobby.
+-- de vuelo, mirando al siguiente nivel) con los corazones llenos. final = meta: al terminar este vuelo el dúo
+-- vuelve al lobby.
 function GliderSession.setCheckpoint(self: Session, index: number, spawn: CFrame, final: boolean)
 	self.checkpoint = index
 	self.respawnCFrame = spawn
 	self.respawnForward = (spawn.LookVector * Vector3.new(1, 0, 1)).Unit
+	self.safeCFrame = spawn
+	self.sinceSafePoint = 0
 	self.completed = final
 	if final then
 		self.timing = false -- la meta para el cronómetro
 	end
+	self.levelLosses = 0
+	self.levelHits = 0
+	self:_setWindAssist(false)
+	self.health.hearts = Config.WingHearts
+	self.health.scrapeTime = 0
+	self.glider:SetAttribute("Hearts", self.health.hearts)
 	self.glider:SetAttribute("Checkpoint", index)
 	self.glider:SetAttribute("Completed", final)
 	self.glider:SetAttribute("RunTime", self.runTime)
 end
 
--- Vuelve al último checkpoint (o a la salida) con el mismo dúo y repite la cuenta atrás.
-function GliderSession.resetToCheckpoint(self: Session)
-	local flight = self.flight
+-- Punto seguro: el controlador lo guarda cada SafePointInterval s de vuelo limpio (sitio despejado, mirando
+-- hacia la línea ideal). Perder el ala o Respawn reaparecen aquí en vez de en el checkpoint.
+function GliderSession.wantsSafePoint(self: Session): boolean
+	return self.flight.state == "Flying"
+		and not self.completed
+		and self.sinceSafePoint >= Config.SafePointInterval
+		and self.cleanTime >= Config.SafePointCleanTime
+end
+
+function GliderSession.setSafePoint(self: Session, cframe: CFrame)
+	self.safeCFrame = cframe
+	self.sinceSafePoint = 0
+end
+
+-- El sitio no estaba despejado: se vuelve a intentar dentro de `seconds`.
+function GliderSession.deferSafePoint(self: Session, seconds: number)
+	self.sinceSafePoint = Config.SafePointInterval - seconds
+end
+
+function GliderSession._setWindAssist(self: Session, enabled: boolean)
+	if self.windAssist ~= enabled then
+		self.windAssist = enabled
+		self.glider:SetAttribute("WindAssist", enabled)
+	end
+end
+
+-- Reaparece en el último punto seguro (o checkpoint, o salida) con los corazones llenos y una cuenta atrás
+-- corta. lostWing = viene de perder el ala o de Respawn: cuenta para el "viento a favor".
+function GliderSession.respawn(self: Session, lostWing: boolean?)
 	self.root.Anchored = true
 	self.linearVelocity.Enabled = false
 	self.alignOrientation.Enabled = false
 	self:_setTrails(false)
-	self.root.CFrame = self.respawnCFrame
+	local spawn = self.safeCFrame
+	self.root.CFrame = spawn
 	self.root.AssemblyLinearVelocity = Vector3.zero
 	self.root.AssemblyAngularVelocity = Vector3.zero
 
-	flight.yaw = GliderMath.yawOf(self.respawnForward)
-	flight.verticalSpeed = 0
-	flight.roll, flight.rollVelocity = 0, 0
-	flight.pitch, flight.pitchVelocity = 0, 0
-	flight.turnRate = 0
+	local forward = spawn.LookVector * Vector3.new(1, 0, 1)
+	self.physics = GliderPhysics.newState(GliderMath.yawOf(if forward.Magnitude > 1e-3 then forward.Unit else self.respawnForward))
+	self.health = GliderPhysics.newHealth()
+	self.cleanTime = 0
+	self.sinceSafePoint = 0
+	self.crashFrom = nil
 	for side, slot in self.slots do
 		slot.position = lateralFor(side, Config.StartOutward)
 		slot.slideVelocity = 0
 	end
+	if lostWing and not self.completed then
+		self.levelLosses += 1
+		if self.levelLosses >= Config.WindAssistAfterCrashes then
+			self:_setWindAssist(true)
+		end
+	end
+	self.respawns += 1
+	self.glider:SetAttribute("Respawns", self.respawns)
+	self.glider:SetAttribute("Hearts", self.health.hearts)
+	self.flight.countdown = Config.RespawnCountdown
+	self.flight.scraping = false
+	self.flight.skimming = false
 	self:_setState("Countdown")
 end
 
+-- Compatibilidad: antes solo se reaparecía en el checkpoint.
+function GliderSession.resetToCheckpoint(self: Session)
+	self:respawn(true)
+end
+
 function GliderSession._launch(self: Session)
-	self.alignOrientation.CFrame = self.respawnCFrame.Rotation
+	local rotation = self.safeCFrame.Rotation
+	self.alignOrientation.CFrame = rotation
 	self.root.Anchored = false
 	self.root:SetNetworkOwner(nil) -- servidor dueño: ningún cliente simula el ala
-	self.linearVelocity.VectorVelocity = self.respawnForward * Config.ForwardSpeed
+	self.linearVelocity.VectorVelocity = GliderPhysics.forwardOf(self.physics.yaw) * self.physics.speed
 	self.linearVelocity.Enabled = true
 	if not self.completed then
 		self.timing = true -- el primer despegue arranca el cronómetro (los siguientes no lo reinician)
@@ -507,12 +592,46 @@ function GliderSession._launch(self: Session)
 	self:_setState("Flying")
 end
 
+-- Sin corazones (o caída fuera del mundo): el ala se pierde. Voltereta corta (CrashPauseTime) y reaparición.
 function GliderSession._crash(self: Session)
+	self.crashFrom = self.root.CFrame
 	self.root.Anchored = true
 	self.linearVelocity.Enabled = false
 	self.alignOrientation.Enabled = false
 	self:_setTrails(false)
+	self.health.hearts = 0
+	self.glider:SetAttribute("Hearts", 0)
 	self:_setState("Ended")
+end
+
+-- Voltereta del ala perdida: cae girando sobre sí misma mientras avanza un poco (anclada, sin física).
+function GliderSession._tumble(self: Session)
+	local from = self.crashFrom
+	if not from then
+		return
+	end
+	local t = self.flight.timer
+	local forward = self.physics.speed * 0.4
+	self.root.CFrame = from * CFrame.new(0, -14 * t * t, -forward * t) * CFrame.Angles(-1.2 * t, 0, 6 * t)
+end
+
+-- Aterrizaje en la isla de meta: el ala se desliza hasta pararse, nivelada, y el dúo vuelve al lobby.
+function GliderSession._land(self: Session)
+	self.root.Anchored = true
+	self.linearVelocity.Enabled = false
+	self.alignOrientation.Enabled = false
+	self:_setTrails(false)
+	self.flight.landSpeed = self.physics.speed
+	self:_setState("Landed")
+end
+
+function GliderSession._slideToStop(self: Session, dt: number)
+	local flight = self.flight
+	flight.landSpeed = GliderMath.approach(flight.landSpeed or 0, 0, 1.4, dt)
+	local current = self.root.CFrame
+	local level = CFrame.new(current.Position) * CFrame.Angles(0, self.physics.yaw, 0)
+	local rotation = current.Rotation:Lerp(level.Rotation, 1 - math.exp(-6 * dt))
+	self.root.CFrame = CFrame.new(current.Position + GliderPhysics.forwardOf(self.physics.yaw) * flight.landSpeed * dt) * rotation
 end
 
 -- Termina la sesión: suelta a los jugadores, destruye el ala y avisa al controlador.
@@ -536,8 +655,11 @@ function GliderSession.finish(self: Session, reason: FinishReason)
 end
 
 -- Los jugadores no chocan entre sí: cada uno se mueve libre por toda la barra.
+-- El cuerpo cuelga de las manos como un péndulo: se balancea al deslizarse y se queda "vertical" cuando el ala
+-- alabea (RiderRig.setPose).
 function GliderSession._updateSlides(self: Session, dt: number)
 	local reach = Config.BarOuterOffset
+	local roll = self.physics.roll
 	for _, slot in self.slots do
 		local rig = slot.rig
 		if not rig then
@@ -551,18 +673,15 @@ function GliderSession._updateSlides(self: Session, dt: number)
 			slot.position = math.clamp(slot.position, -reach, reach)
 			slot.slideVelocity = 0
 		end
-		RiderRig.setLateral(rig, slot.position)
+		local swing = -slot.slideVelocity / Config.PlayerSlideSpeed * Config.RiderSlideSwing - roll * Config.RiderRollSwing
+		RiderRig.setPose(rig, slot.position, swing)
 	end
 end
 
--- Posiciones de ambos cuerpos → LiftInput y BalanceInput. No existe "lado" de cada jugador:
---   LiftInput    = promedio de lo lejos del centro que está cada uno (da igual hacia qué lado)
---                  ambos centrados → 0 → baja · ambos pegados a un extremo (cualquiera) → 1 → sube
---   BalanceInput = hacia dónde cae el peso de los dos juntos (centro de masa)
---                  equilibrado respecto al centro → 0 → recto · peso a un lado → gira hacia ese lado
+-- Posiciones de ambos cuerpos → LiftInput y BalanceInput (GliderPhysics.inputs). No existe "lado" de cada
+-- jugador: LiftInput = lo abiertos que están (da igual hacia qué lado) · BalanceInput = hacia dónde cae el peso.
 -- En solitario, el hueco vacío es un compañero fantasma en espejo: sube y baja pero no gira.
 function GliderSession._computeInputs(self: Session)
-	local inner, outer = Config.BarInnerOffset, Config.BarOuterOffset
 	local left, right = self.slots[LEFT], self.slots[RIGHT]
 	local a, b = left.position, right.position
 	if left.rig and not right.rig then
@@ -572,83 +691,16 @@ function GliderSession._computeInputs(self: Session)
 	end
 	local flight = self.flight
 	flight.leftPosition, flight.rightPosition = a, b
-
-	local function outwardness(position: number): number
-		return math.clamp((math.abs(position) - inner) / (outer - inner), 0, 1)
-	end
-	flight.liftInput = (outwardness(a) + outwardness(b)) / 2
-
-	local centerOfMass = (a + b) / 2
-	flight.balanceInput = math.clamp(-centerOfMass / ((outer - inner) / 2), -1, 1)
-end
-
--- Una superficie que mira hacia abajo es un techo: se roza, nunca es un choque.
-local function isCeiling(result: RaycastResult): boolean
-	return result.Normal.Y < -0.5
-end
-
--- Techo: máxima velocidad vertical permitida (math.huge si no hay techo cerca).
--- Al acercarse frena la subida; si ya roza, lo empuja apenas hacia abajo.
-function GliderSession._ceilingLimit(self: Session, params: RaycastParams): number
-	local rollRadians = math.rad(math.abs(self.flight.roll))
-	local topExtent = self.wingTop * math.cos(rollRadians) + self.gliderSize.X / 2 * math.sin(rollRadians)
-	local origin = self.root.Position
-	local result = workspace:Raycast(origin, Vector3.new(0, topExtent + Config.CeilingProbeDistance, 0), params)
-	if not (result and isCeiling(result)) then
-		return math.huge
-	end
-	local gap = result.Position.Y - (origin.Y + topExtent)
-	return (gap - Config.CeilingClearance) * Config.CeilingStiffness
-end
-
-function GliderSession._hitSomething(self: Session, velocity: Vector3, dt: number, params: RaycastParams): boolean
-	local position = self.root.Position
-	if position.Y < Config.KillHeight then
-		return true
-	end
-
-	local groundProbe = Config.FeetBelowRoot + Config.GroundClearance
-	if workspace:Raycast(position, Vector3.new(0, -groundProbe, 0), params) then
-		return true
-	end
-
-	-- Volumen del ala + jugadores colgados, barrido en la dirección de vuelo.
-	local height = self.wingTop + Config.FeetBelowRoot
-	local center = self.root.CFrame * CFrame.new(0, (self.wingTop - Config.FeetBelowRoot) / 2, 0)
-	local size = Vector3.new(self.gliderSize.X, height, 2)
-	local sweep = velocity.Unit * (velocity.Magnitude * dt + Config.ObstacleProbeDistance)
-	local result = workspace:Blockcast(center, size, sweep, params)
-	return result ~= nil and not isCeiling(result)
+	flight.liftInput, flight.balanceInput = GliderPhysics.inputs(a, b)
 end
 
 function GliderSession._fly(self: Session, dt: number, params: RaycastParams)
-	local flight = self.flight
-	local maxVertical = self:_ceilingLimit(params)
-
-	-- Sustentación: lift ∈ [-1, 1] alrededor del punto neutro, con curva arcade.
-	local neutral = Config.NeutralLiftPoint
-	local liftInput = flight.liftInput
-	local lift = if liftInput <= neutral then (liftInput - neutral) / neutral else (liftInput - neutral) / (1 - neutral)
-	lift = GliderMath.curve(lift, Config.LiftCurve)
-	local targetVertical = if lift >= 0 then lift * Config.MaxClimbSpeed else lift * Config.MaxFallSpeed
-	flight.verticalSpeed = GliderMath.approach(flight.verticalSpeed, targetVertical, Config.VerticalResponse, dt)
-	-- El techo recorta la subida guardada: al bajar la sustentación, el ala se despega enseguida.
-	flight.verticalSpeed = math.min(flight.verticalSpeed, maxVertical)
-
-	-- Balance → alabeo (muelle con rebote) → giro de rumbo.
-	local balance = GliderMath.curve(flight.balanceInput, Config.BalanceCurve)
-	local targetRoll = balance * Config.MaxRoll
-	flight.roll, flight.rollVelocity =
-		GliderMath.spring(flight.roll, flight.rollVelocity, targetRoll, Config.RollResponse, Config.RollDamping, dt)
-	local targetTurn = (flight.roll / Config.MaxRoll) * Config.MaxTurnRate
-	flight.turnRate = GliderMath.approach(flight.turnRate, targetTurn, Config.TurnResponse, dt)
-	flight.yaw += math.rad(flight.turnRate) * dt
-
-	-- Pitch visual según la velocidad vertical actual (rozando el techo queda nivelado).
-	local verticalRange = if flight.verticalSpeed >= 0 then Config.MaxClimbSpeed else Config.MaxFallSpeed
-	local targetPitch = (flight.verticalSpeed / verticalRange) * Config.MaxPitch
-	flight.pitch, flight.pitchVelocity =
-		GliderMath.spring(flight.pitch, flight.pitchVelocity, targetPitch, Config.PitchResponse, Config.PitchDamping, dt)
+	local flight, physics = self.flight, self.physics
+	local position = self.root.Position
+	if position.Y < Config.KillHeight then
+		self:_crash()
+		return
+	end
 
 	-- Corrientes de aire: continuas, lentas y pequeñas. Cada ala tiene su propio "viento".
 	local t = flight.time * Config.WindFlowSpeed + self.id * 17.3
@@ -657,21 +709,62 @@ function GliderSession._fly(self: Session, dt: number, params: RaycastParams)
 	local windRoll = GliderMath.flow(t, 5.3) * Config.WindRollAmplitude * wind
 	local windVertical = GliderMath.flow(t * 0.8, 9.1) * Config.WindVerticalAmplitude * wind
 
-	local heading = CFrame.Angles(0, flight.yaw, 0)
-	local vertical = math.min(flight.verticalSpeed + windVertical, maxVertical)
-	local velocity = heading.LookVector * Config.ForwardSpeed + Vector3.new(0, vertical, 0)
-	self.linearVelocity.VectorVelocity = velocity
-	self.alignOrientation.CFrame = heading
-		* CFrame.Angles(math.rad(flight.pitch + windPitch), 0, 0)
-		* CFrame.Angles(0, 0, math.rad(flight.roll + windRoll))
-
-	if self:_hitSomething(velocity, dt, params) then
-		self:_crash()
+	-- Asistencia: gira un poco hacia la línea ideal; con viento a favor, además sube o baja hacia ella.
+	local assistTurn = 0
+	local goal = self.assistGoal
+	if goal and not self.completed then
+		local fraction = Config.AssistTurnFraction * self.assistStrength
+		if self.windAssist then
+			fraction = math.max(fraction, Config.WindAssistTurnFraction)
+			windVertical += math.clamp((goal.Y - position.Y) * 0.5, -Config.WindAssistVertical, Config.WindAssistVertical)
+		end
+		if fraction > 0 then
+			assistTurn = GliderPhysics.pursuitTurn(position, GliderPhysics.forwardOf(physics.yaw), goal, physics.speed) * fraction
+		end
 	end
+
+	local result = GliderPhysics.fly(physics, self.health, flight.liftInput, flight.balanceInput, position, self.dims, dt, params, {
+		now = flight.time,
+		assistTurn = assistTurn,
+		landing = self.completed,
+		windVertical = windVertical,
+	})
+	if result.landed then
+		self:_land()
+		return
+	end
+	local glider = self.glider
+	if result.event == "impact" or result.event == "crash" then
+		self.impacts += 1
+		self.levelHits += 1
+		glider:SetAttribute("Impacts", self.impacts)
+		glider:SetAttribute("Hearts", self.health.hearts)
+	end
+	if result.event == "crash" then
+		self:_crash()
+		return
+	end
+	local contact = result.contact
+	if contact then
+		self.cleanTime = 0
+		if result.event == "impact" or not flight.scraping then
+			glider:SetAttribute("ContactPoint", contact.Position) -- chispas en el cliente
+		end
+	else
+		self.cleanTime += dt
+	end
+	flight.scraping = contact ~= nil
+	flight.skimming = result.skimming
+	self.sinceSafePoint += dt
+
+	self.linearVelocity.VectorVelocity = result.velocity
+	self.alignOrientation.CFrame = CFrame.Angles(0, physics.yaw, 0)
+		* CFrame.Angles(math.rad(physics.pitch + windPitch), 0, 0)
+		* CFrame.Angles(0, 0, math.rad(physics.roll + windRoll))
 end
 
 function GliderSession._broadcast(self: Session, dt: number)
-	local flight = self.flight
+	local flight, physics = self.flight, self.physics
 	flight.broadcastTimer += dt
 	if flight.broadcastTimer < Config.StateBroadcastInterval then
 		return
@@ -680,14 +773,20 @@ function GliderSession._broadcast(self: Session, dt: number)
 	local glider = self.glider
 	glider:SetAttribute("LeftPosition", flight.leftPosition / Config.BarOuterOffset)
 	glider:SetAttribute("RightPosition", flight.rightPosition / Config.BarOuterOffset)
+	glider:SetAttribute("LeftAxis", self.slots[LEFT].axis) -- intención de cada uno (flechas en el HUD)
+	glider:SetAttribute("RightAxis", self.slots[RIGHT].axis)
 	glider:SetAttribute("LiftInput", flight.liftInput)
 	glider:SetAttribute("BalanceInput", flight.balanceInput)
-	glider:SetAttribute("VerticalSpeed", flight.verticalSpeed)
-	glider:SetAttribute("Roll", flight.roll)
-	glider:SetAttribute("TurnRate", flight.turnRate)
-	glider:SetAttribute("Countdown", math.max(0, Config.CountdownTime - flight.timer))
+	glider:SetAttribute("VerticalSpeed", physics.verticalSpeed)
+	glider:SetAttribute("Speed", physics.speed)
+	glider:SetAttribute("Roll", physics.roll)
+	glider:SetAttribute("TurnRate", physics.turnRate)
+	glider:SetAttribute("Countdown", math.max(0, flight.countdown - flight.timer))
 	glider:SetAttribute("Altitude", self.root.Position.Y)
 	glider:SetAttribute("RunTime", self.runTime)
+	glider:SetAttribute("Scraping", flight.scraping)
+	glider:SetAttribute("Skimming", flight.skimming)
+	glider:SetAttribute("Invulnerable", flight.time < self.health.invulnerableUntil)
 	if flight.state == "Flying" then
 		self:_updateTrails()
 	end
@@ -709,7 +808,7 @@ function GliderSession.step(self: Session, dt: number, params: RaycastParams)
 
 	local state = flight.state
 	if state == "Countdown" then
-		if flight.timer >= Config.CountdownTime then
+		if flight.timer >= flight.countdown then
 			self:_launch()
 		end
 	elseif state == "Flying" then
@@ -717,11 +816,19 @@ function GliderSession.step(self: Session, dt: number, params: RaycastParams)
 	elseif state == "Ended" then
 		if flight.timer >= Config.CrashPauseTime then
 			if self.completed then
-				self:finish("completed") -- aterrizaron tras la meta: fin del recorrido
+				self:finish("completed") -- tras la meta, perder el ala también termina el recorrido
 				return
 			end
-			self:resetToCheckpoint() -- choque: el mismo dúo sigue desde su último checkpoint
+			self:respawn(true) -- el mismo dúo sigue desde su último punto seguro
+		else
+			self:_tumble()
 		end
+	elseif state == "Landed" then
+		if flight.timer >= Config.LandingTime then
+			self:finish("completed") -- aterrizaron tras la meta: fin del recorrido
+			return
+		end
+		self:_slideToStop(dt)
 	end
 
 	self:_broadcast(dt)

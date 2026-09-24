@@ -3,7 +3,8 @@
 --
 -- Ciclo:  lobby → plataforma de dúo (2 jugadores) → se clona un ala en la salida → vuelan
 --         → cada isla de descanso es un CHECKPOINT (pantalla en ambos clientes)
---         → choque (o botón Reset) → el mismo dúo reaparece en su último checkpoint
+--         → golpes: el ala resbala y pierde corazones; sin corazones (o botón Respawn) el mismo dúo reaparece
+--           en su último PUNTO SEGURO (checkpoint o tramo reciente de vuelo limpio, lo guarda este script)
 --         → botón Lobby (cualquiera de los dos), que uno se vaya o muera, o aterrizar tras la meta
 --           → el dúo vuelve al lobby
 --
@@ -22,6 +23,7 @@ local ServerStorage = game:GetService("ServerStorage")
 
 local Shared = ReplicatedStorage:WaitForChild("Glider")
 local Config = require(Shared.GliderConfig)
+local GliderPhysics = require(Shared.GliderPhysics)
 local Checkpoints = require(script.Parent.Checkpoints)
 local CollisionGroups = require(script.Parent.CollisionGroups)
 local DuoLeaderboard = require(script.Parent.DuoLeaderboard)
@@ -144,11 +146,24 @@ local function levelOf(session: Session): number
 	return math.clamp(session.checkpoint + 1, 1, math.max(courseOf[session]:count(), 1))
 end
 
+-- Asistencia de rumbo según el nivel: completa en los capítulos 1-3, se desvanece hasta el capítulo 6.
+-- En el tutorial la da el bot (que ya pilota el rumbo), no el servidor.
+local function assistStrength(session: Session): number
+	if tutorialRuns[session] then
+		return 0
+	end
+	local level = levelOf(session)
+	local full, stop = Config.AssistFullUntilLevel, Config.AssistEndLevel
+	return math.clamp((stop - level) / math.max(stop - full, 1), 0, 1)
+end
+
 local function publishLevel(session: Session)
 	local course = courseOf[session]
 	local level = levelOf(session)
 	local title, color = course:levelInfo(level)
 	local glider = session.glider
+	session.assistStrength = assistStrength(session)
+	glider:SetAttribute("Biome", course:biomeOf(level))
 	glider:SetAttribute("Level", level)
 	glider:SetAttribute("LevelCount", course:count())
 	glider:SetAttribute("LevelTitle", title)
@@ -203,9 +218,9 @@ local function startTutorial(player: Player)
 	nextId += 1
 	local session = GliderSession.new(nextId, template, gliderFolder, { player }, onSessionFinished, launch.CFrame, 0)
 	session:addBot(bot, TutorialBot.SIDE)
-	sessions[session] = true
 	courseOf[session] = tutorialCourse
 	tutorialRuns[session] = true
+	sessions[session] = true
 	session.glider:SetAttribute("Tutorial", true)
 	publishLevel(session)
 	sessionOf[player] = session
@@ -327,6 +342,32 @@ remote.OnServerEvent:Connect(function(player: Player, kind: unknown, value: unkn
 	end
 end)
 
+-- ── Puntos seguros ────────────────────────────────────────────────────
+
+-- Tras unos segundos de vuelo limpio, la posición actual pasa a ser el punto de reaparición si está despejada:
+-- una caja algo mayor que el ala (y larga hacia delante) no toca nada del mapa. Mira hacia la línea ideal.
+local safeOverlap = OverlapParams.new()
+safeOverlap.CollisionGroup = CollisionGroups.Probe
+local function trySafePoint(session: Session, course: Checkpoints.Course)
+	local position = session.root.Position
+	local goal = course:lookahead(levelOf(session), position, 80)
+	local forward = if goal then (goal - position) * Vector3.new(1, 0, 1) else Vector3.zero
+	if forward.Magnitude < 1 then
+		forward = GliderPhysics.forwardOf(session.physics.yaw)
+	end
+	local spawn = CFrame.lookAt(position, position + forward.Unit)
+	local margin = Config.SafePointMargin
+	local dims = session.dims
+	local height = dims.wingTop + Config.FeetBelowRoot
+	local box = spawn * CFrame.new(0, (dims.wingTop - Config.FeetBelowRoot) / 2, -40)
+	local size = Vector3.new(dims.span + 2 * margin, height + 2 * margin, 80 + 2 * margin)
+	if #workspace:GetPartBoundsInBox(box, size, safeOverlap) == 0 then
+		session:setSafePoint(spawn)
+	else
+		session:deferSafePoint(1)
+	end
+end
+
 -- ── Simulación ────────────────────────────────────────────────────────
 
 local probeParams = CollisionGroups.probeParams()
@@ -342,17 +383,22 @@ RunService.Heartbeat:Connect(function(rawDt)
 	end
 	for session in sessions do
 		local course = courseOf[session]
-		if publishProgress and not session.completed then
-			session.glider:SetAttribute("LevelProgress", course:progress(levelOf(session), session.root.Position))
+		local level = levelOf(session)
+		local position = session.root.Position
+		-- Línea ideal por delante: la asistencia apunta aquí y la cámara la usa para anticipar las curvas.
+		session.assistGoal = course:lookahead(level, position, Config.AssistLookahead)
+		if publishProgress then
+			if not session.completed then
+				session.glider:SetAttribute("LevelProgress", course:progress(level, position))
+			end
+			session.glider:SetAttribute("RouteAhead", course:lookahead(level, position, Config.CameraRouteLookahead))
 		end
 		if tutorialRuns[session] then
 			-- Bot: pilota el rumbo hacia la línea ideal del tramo; la subida y bajada las decide el jugador.
-			local level = levelOf(session)
 			local flying = session.flight.state == "Flying"
-			local position = session.root.Position
 			local progress = if flying then course:progress(level, position) else 0
 			local balance = if flying
-				then TutorialBot.steer(position, CFrame.Angles(0, session.flight.yaw, 0).LookVector, course:lookahead(level, position, TutorialBot.LOOKAHEAD))
+				then TutorialBot.steer(position, GliderPhysics.forwardOf(session.physics.yaw), course:lookahead(level, position, TutorialBot.LOOKAHEAD))
 				else 0
 			local hint = TutorialBot.step(session.slots, session.flight.state, tutorialCues[level] or {}, progress, balance)
 			if session.glider:GetAttribute("TutorialHint") ~= hint then
@@ -360,7 +406,7 @@ RunService.Heartbeat:Connect(function(rawDt)
 			end
 		end
 		-- Checkpoints: tramo recorrido desde el paso anterior (solo en vuelo; tras reaparecer se empieza de cero).
-		-- Choque: pasa de volar a "Ended" sin haber cruzado la meta (aterrizar tras la meta no es choque).
+		-- Ala perdida: pasa de volar a "Ended" sin haber cruzado la meta (aterrizar tras la meta no cuenta).
 		local flying = session.flight.state == "Flying"
 		if wasFlying[session] and session.flight.state == "Ended" and not session.completed and not devRuns[session] and not tutorialRuns[session] then
 			for _, player in session:riders() do
@@ -372,12 +418,12 @@ RunService.Heartbeat:Connect(function(rawDt)
 		else
 			wasFlying[session] = nil
 		end
-		-- Empieza una cuenta atrás (despegue o reaparición en el checkpoint): el ala acaba de saltar de sitio,
-		-- se pide cargar esa zona mientras cuenta.
+		-- Empieza una cuenta atrás (despegue o reaparición): el ala acaba de saltar de sitio, se pide cargar esa
+		-- zona mientras cuenta.
 		if session.flight.state == "Countdown" then
 			if not inCountdown[session] then
 				for _, player in session:riders() do
-					LevelStreaming.prepare(player, session.respawnCFrame.Position)
+					LevelStreaming.prepare(player, session.safeCFrame.Position)
 				end
 			end
 			inCountdown[session] = true
@@ -385,11 +431,12 @@ RunService.Heartbeat:Connect(function(rawDt)
 			inCountdown[session] = nil
 		end
 		if flying then
-			local position = session.root.Position
 			local previous = lastPosition[session]
 			local checkpoint = previous and course:crossed(previous, position, session.checkpoint)
 			if checkpoint then
 				reachCheckpoint(session, checkpoint)
+			elseif session:wantsSafePoint() then
+				trySafePoint(session, course)
 			end
 			lastPosition[session] = position
 		else

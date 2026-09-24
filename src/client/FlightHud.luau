@@ -2,6 +2,7 @@
 -- HUD de vuelo (solo mientras vas en el ala). Lee los atributos que publica el servidor en el ala:
 --   · arriba izquierda: LEVEL NN / total, título, franja del color del bioma y barra de progreso del nivel
 --   · arriba derecha:   cronómetro del recorrido (RunTime)
+--   · arriba centro:    corazones del ala (Hearts / MaxHearts): parpadean al perder uno
 --   · abajo centro:     la barra del ala con tu marca y la de tu compañero, zona central, e indicadores
 --                       CLIMB / DIVE / GLIDE (sale de LiftInput) y de giro << >> (sale de BalanceInput)
 --   · centro:           cuenta atrás grande "3 · 2 · 1 · GO!" y avisos de choque / meta
@@ -20,6 +21,7 @@ local PANEL = Color3.fromRGB(18, 22, 30)
 local ME_COLOR = Color3.fromRGB(255, 205, 50)
 local PARTNER_COLOR = Color3.fromRGB(235, 240, 255)
 local CLIMB_COLOR, DIVE_COLOR = Color3.fromRGB(110, 230, 120), Color3.fromRGB(255, 150, 70)
+local HEART_COLOR, HEART_EMPTY = Color3.fromRGB(255, 80, 95), Color3.fromRGB(70, 60, 70)
 local DEFAULT_ACCENT = Color3.fromRGB(255, 110, 95)
 local LIFT_BAND = 0.06 -- LiftInput a menos de esto del punto neutro = GLIDE
 local TURN_BAND = 0.12 -- BalanceInput por debajo de esto = recto
@@ -113,6 +115,33 @@ timerCaption.Text = "TIME"
 local timerText = text(timerPanel, Enum.Font.RobotoMono, 26)
 timerText.Position = UDim2.fromOffset(0, 17)
 timerText.Size = UDim2.new(1, 0, 0, 28)
+
+-- Corazones (arriba centro).
+local heartsRow = Instance.new("Frame")
+heartsRow.Name = "Hearts"
+heartsRow.AnchorPoint = Vector2.new(0.5, 0)
+heartsRow.Position = UDim2.new(0.5, 0, 0, 14)
+heartsRow.Size = UDim2.fromOffset(150, 40)
+heartsRow.BackgroundTransparency = 1
+heartsRow.Parent = gui
+local heartsLayout = Instance.new("UIListLayout")
+heartsLayout.FillDirection = Enum.FillDirection.Horizontal
+heartsLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+heartsLayout.Padding = UDim.new(0, 6)
+heartsLayout.Parent = heartsRow
+local hearts: { TextLabel } = {}
+local heartScales: { UIScale } = {}
+for index = 1, Config.WingHearts do
+	local heart = text(heartsRow, Enum.Font.GothamBlack, 34, HEART_COLOR)
+	heart.Size = UDim2.fromOffset(40, 40)
+	heart.Text = "♥"
+	heart.LayoutOrder = index
+	stroke(heart, 2, 0.3)
+	local scale = Instance.new("UIScale")
+	scale.Parent = heart
+	hearts[index] = heart
+	heartScales[index] = scale
+end
 
 -- Barra del ala (abajo centro).
 local barPanel = panel(gui, "Bar")
@@ -209,6 +238,8 @@ end
 
 local lastState: string? = nil
 local lastCountdown = -1
+local shownHearts = Config.WingHearts
+local blinkClock = 0
 local shownProgress = 0
 local lastRunTime, runTimeClock = -1, 0
 
@@ -247,6 +278,25 @@ function FlightHud.update(glider: Model?, side: number, dt: number)
 	local running = runTime > 0 and not glider:GetAttribute("Completed")
 	timerText.Text = formatTime(runTime + (if running then math.min(os.clock() - runTimeClock, TIMER_EXTRAPOLATION) else 0))
 
+	-- Corazones: el que se pierde salta y se apaga; invulnerable = parpadeo.
+	local maxHearts = math.max(number(glider, "MaxHearts"), 1)
+	local heartCount = if glider:GetAttribute("Hearts") == nil then maxHearts else number(glider, "Hearts")
+	if heartCount < shownHearts then
+		for index = heartCount + 1, math.min(shownHearts, #hearts) do
+			heartScales[index].Scale = 1.8
+			TweenService:Create(heartScales[index], TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+		end
+	end
+	shownHearts = heartCount
+	blinkClock += dt
+	local blinking = glider:GetAttribute("Invulnerable") == true and (blinkClock * 8) % 2 < 1
+	for index, heart in hearts do
+		heart.Visible = index <= maxHearts
+		heart.TextColor3 = if index <= heartCount then HEART_COLOR else HEART_EMPTY
+		heart.TextTransparency = if blinking and index <= heartCount then 0.6 else 0
+	end
+	heartsRow.Visible = state ~= "Landed"
+
 	-- Barra: yo y mi compañero (si hay).
 	local mine = number(glider, if side < 0 then "LeftPosition" else "RightPosition")
 	local theirs = number(glider, if side < 0 then "RightPosition" else "LeftPosition")
@@ -277,7 +327,11 @@ function FlightHud.update(glider: Model?, side: number, dt: number)
 		end
 		lastCountdown = seconds
 		local checkpoint = number(glider, "Checkpoint")
-		toast.Text = if checkpoint > 0 then string.format("Starting from checkpoint %d", checkpoint) else "Get ready!"
+		if number(glider, "Respawns") > 0 then
+			toast.Text = if glider:GetAttribute("WindAssist") then "Tailwind on: the wind will help you this time" else "Back in the air!"
+		else
+			toast.Text = if checkpoint > 0 then string.format("Starting from checkpoint %d", checkpoint) else "Get ready!"
+		end
 		toast.TextColor3 = Color3.new(1, 1, 1)
 	elseif state == "Flying" then
 		if lastState == "Countdown" then
@@ -295,10 +349,11 @@ function FlightHud.update(glider: Model?, side: number, dt: number)
 		if glider:GetAttribute("Completed") then
 			toast.Text, toast.TextColor3 = "FINISH! Back to the lobby…", CLIMB_COLOR
 		else
-			local checkpoint = number(glider, "Checkpoint")
-			toast.Text = if checkpoint > 0 then string.format("CRASH! Back to checkpoint %d", checkpoint) else "CRASH! Back to the start"
-			toast.TextColor3 = DIVE_COLOR
+			toast.Text, toast.TextColor3 = "WING LOST! Back to the last safe point", DIVE_COLOR
 		end
+	elseif state == "Landed" then
+		countdown.Text = ""
+		toast.Text, toast.TextColor3 = "Nice landing!", CLIMB_COLOR
 	end
 	lastState = if type(state) == "string" then state else nil
 

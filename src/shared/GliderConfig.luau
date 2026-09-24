@@ -34,29 +34,38 @@ local GliderConfig = {
 	-- ── Sesión de vuelo ────────────────────────────────────────────────
 	RequireBothPlayers = true, -- false = permite volar con 1 solo jugador (pruebas)
 	CountdownTime = 2, -- segundos colgados en la salida antes de despegar
-	CrashPauseTime = 1.5, -- segundos congelados tras chocar antes de volver al lobby
-	ResetCooldown = 1, -- segundos mínimos entre dos pulsaciones del botón Reset (de cualquier jugador)
+	RespawnCountdown = 1, -- segundos colgados al reaparecer tras perder el ala (o con Respawn)
+	CrashPauseTime = 0.6, -- segundos de caída (voltereta) tras perder el ala antes de reaparecer
+	LandingTime = 2.5, -- segundos que el ala se desliza sobre la isla de meta antes de volver al lobby
+	ResetCooldown = 1, -- segundos mínimos entre dos pulsaciones del botón Respawn (de cualquier jugador)
 	ShowDebug = false, -- true = muestra valores de Lift/Balance/velocidad en pantalla
 
 	-- ── Avance (nunca desaparece durante el vuelo) ─────────────────────
 	ForwardSpeed = 60, -- studs/s
+	-- Inercia suave: en picado se gana algo de velocidad, subiendo se pierde un poco (false = siempre 60).
+	MomentumEnabled = true,
+	MomentumDive = 0.15, -- +15 % de avance con la caída máxima
+	MomentumClimb = 0.08, -- −8 % con la subida máxima
+	SpeedResponse = 1.5, -- rapidez con que el avance vuelve a su objetivo (1/s), también tras un golpe
 
 	-- ── Sustentación (sale de la separación entre ambos jugadores) ─────
 	-- LiftInput = 0 juntos en el mínimo de separación … 1 cada uno en un extremo
 	MaxFallSpeed = 30, -- studs/s de caída con LiftInput = 0 (ambos en el centro)
 	MaxClimbSpeed = 26, -- studs/s de subida con LiftInput = 1 (ambos en los extremos)
 	NeutralLiftPoint = 0.5, -- LiftInput que mantiene la altura
-	LiftCurve = 0.55, -- <1 = arcade: un pequeño cambio de separación ya da mucha subida/bajada
+	LiftDeadzone = 0.06, -- alrededor del punto neutro no se sube ni se baja ("más o menos" = nivelado)
+	LiftCurve = 1.0, -- 1 = lineal (antes 0,55: muy brusco cerca del punto neutro); >1 = aún más tranquilo
 	VerticalResponse = 5, -- rapidez con que la velocidad vertical persigue su objetivo (1/s)
 
 	-- ── Balance / giro (sale del centro de masa de ambos jugadores) ────
 	-- BalanceInput > 0: el peso está desplazado a la izquierda; < 0: a la derecha
-	BalanceCurve = 0.7, -- <1 = arcade: un desequilibrio pequeño ya se nota
+	BalanceDeadzone = 0.08, -- un desequilibrio pequeño no gira (hace de compensador: nadie tiene que estar exacto)
+	BalanceCurve = 1.15, -- >1 = giros suaves con poco desequilibrio, completos al irse los dos a un lado (antes 0,7)
 	MaxRoll = 45, -- grados de alabeo con desequilibrio total
 	RollResponse = 8, -- frecuencia del muelle de alabeo (rad/s): más alto = más rápido
-	RollDamping = 0.45, -- <1 = rebote al llegar y al soltar (tambaleo divertido)
+	RollDamping = 0.6, -- <1 = algo de rebote al llegar y al soltar, sin el tambaleo de antes (0,45)
 	MaxTurnRate = 68, -- grados/s de giro de rumbo con alabeo máximo
-	TurnResponse = 6, -- rapidez con que el giro sigue al alabeo (1/s)
+	TurnResponse = 8, -- rapidez con que el giro sigue al alabeo (1/s)
 
 	-- ── Pitch (feedback visual de subir/bajar) ─────────────────────────
 	MaxPitch = 24, -- grados de nariz arriba/abajo con subida/caída máxima
@@ -66,13 +75,13 @@ local GliderConfig = {
 	-- ── Corrientes de aire suaves (math.noise) ─────────────────────────
 	WindFlowStrength = 1, -- 0 = sin viento; multiplica todas las amplitudes
 	WindFlowSpeed = 0.3, -- frecuencia del ruido (lento = corriente, rápido = vibración)
-	WindPitchAmplitude = 1.5, -- grados
-	WindRollAmplitude = 2, -- grados
-	WindVerticalAmplitude = 1, -- studs/s
+	WindPitchAmplitude = 0.75, -- grados
+	WindRollAmplitude = 1, -- grados
+	WindVerticalAmplitude = 0.5, -- studs/s
 
 	-- ── Jugadores en la barra ──────────────────────────────────────────
 	-- Cada jugador puede recorrer toda la barra, de extremo a extremo, y no chocan entre sí.
-	PlayerSlideSpeed = 10, -- studs/s de desplazamiento por la barra
+	PlayerSlideSpeed = 13, -- studs/s de desplazamiento por la barra
 	PlayerSlideResponse = 20, -- aceleración del deslizamiento (alto = arranca y frena en seco)
 	StartOutward = 0.5, -- separación inicial de cada uno hacia su lado (0.5 = vuelo nivelado)
 	BarInnerOffset = 1.1, -- cada uno a menos de esto del centro ya cuenta como "centrado" (studs)
@@ -81,12 +90,45 @@ local GliderConfig = {
 	HangBack = 0.35, -- studs que el cuerpo queda detrás de la barra
 	HangLean = 6, -- grados que el torso se inclina hacia adelante
 	HandSpacing = 0.85, -- distancia de cada mano al centro del jugador sobre la barra
+	RiderSlideSwing = 12, -- grados que el cuerpo se balancea hacia atrás al deslizarse a toda velocidad
+	RiderRollSwing = 0.5, -- fracción del alabeo del ala que el cuerpo compensa (cuelga más vertical)
 
-	-- ── Colisión mínima (fin del vuelo) ────────────────────────────────
-	GroundClearance = 2.5, -- studs bajo los pies que cuentan como "tocar suelo"
+	-- ── Contactos (GliderPhysics): tocar algo no es morir ──────────────
+	-- El ala resbala por la superficie. Un golpe fuerte o un roce largo quitan un corazón; sin corazones se pierde
+	-- el ala y se reaparece en el último punto seguro. Suelos y tops nunca quitan corazones.
+	WingHearts = 3,
+	ImpactSpeed = 18, -- studs/s de velocidad CONTRA la superficie que cuentan como golpe (≈17° a 60 studs/s)
+	ScrapeDamageTime = 1.2, -- segundos de roce seguidos que cuestan un corazón
+	InvulnerableTime = 1.5, -- segundos sin daño tras perder un corazón (el ala parpadea)
+	ContactPush = 10, -- studs/s de empujón de separación al tocar
+	ContactPushDecay = 4, -- rapidez con que se desvanece ese empujón (1/s)
+	ContactSteer = 0.5, -- fracción del giro hacia la dirección de la superficie en cada contacto
+	HarmlessNormalY = 0.7, -- superficies con la normal más vertical que esto son "suelo" (sin daño)
+	HitboxSpanFactor = 0.75, -- el núcleo que choca es más estrecho que el ala (las puntas perdonan)
+	HitboxFeetFactor = 0.7, -- y más corto por debajo (los pies de los jugadores perdonan)
+	FloorCushion = 3, -- studs sobre el suelo a los que el ala empieza a levantarse sola
+	FloorCushionStiffness = 4, -- fuerza del cojín (studs/s de subida por stud de hundimiento)
+	SkimGap = 8, -- studs sobre el suelo que cuentan como "rasante" (polvo en el cliente)
+	GroundClearance = 2.5, -- studs bajo los pies que cuentan como "tocar suelo" (aterrizaje en la meta)
 	FeetBelowRoot = 6.3, -- aprox. distancia barra→pies de un personaje colgado
 	ObstacleProbeDistance = 3, -- studs extra de detección hacia delante
-	KillHeight = -40, -- si el ala baja de esta Y, el vuelo termina
+	KillHeight = -40, -- si el ala baja de esta Y, se pierde
+
+	-- ── Puntos seguros (reaparición) ───────────────────────────────────
+	SafePointInterval = 8, -- cada cuántos segundos de vuelo se guarda un punto seguro
+	SafePointCleanTime = 3, -- segundos sin tocar nada necesarios para guardarlo
+	SafePointMargin = 10, -- studs libres alrededor del ala para que el punto sea seguro
+
+	-- ── Asistencia (el servidor ayuda a seguir la línea ideal) ─────────
+	-- Solo actúa cuando nadie gira fuerte: se suma al giro de los jugadores, nunca lo anula.
+	AssistTurnFraction = 0.35, -- fracción del giro necesario que aporta la asistencia
+	AssistInputThreshold = 0.3, -- con un giro de los jugadores por encima de esto, la asistencia se retira
+	AssistLookahead = 120, -- studs por delante sobre la línea ideal a los que apunta
+	AssistFullUntilLevel = 10, -- capítulos 1-2: asistencia completa
+	AssistEndLevel = 26, -- desde el capítulo 6: sin asistencia (se desvanece entre medias)
+	WindAssistAfterCrashes = 3, -- alas perdidas en el mismo nivel para activar el "viento a favor"
+	WindAssistTurnFraction = 0.6, -- asistencia de giro con viento a favor
+	WindAssistVertical = 6, -- studs/s de ayuda vertical hacia la línea ideal con viento a favor
 
 	-- ── Techo (se roza, nunca es choque) ───────────────────────────────
 	CeilingClearance = 1, -- studs que el punto más alto del ala queda por debajo del techo
@@ -113,6 +155,7 @@ local GliderConfig = {
 	CameraFovResponse = 4, -- suavizado del cambio de FOV (1/s)
 	CameraTrackCorrection = 6, -- rapidez con que la predicción local se corrige hacia la posición real (1/s)
 	CameraSnapDistance = 25, -- si la predicción se aleja más que esto (reset), la cámara salta
+	CameraRouteLookahead = 150, -- studs de línea ideal por delante que el servidor publica (RouteAhead)
 
 	-- ── Red ────────────────────────────────────────────────────────────
 	MaxInputsPerSecond = 30, -- el servidor ignora mensajes por encima de esto

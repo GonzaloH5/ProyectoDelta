@@ -1,6 +1,7 @@
 --!strict
--- Pruebas: botón en pantalla (tecla R, botón Y del mando) que pide al servidor volver al último checkpoint
--- (o a la salida): ala y ambos jugadores, con cuenta atrás. El servidor decide si lo acepta.
+-- Botón en pantalla (tecla R, botón Y del mando) que pide al servidor reaparecer en el último punto seguro
+-- (checkpoint o tramo reciente de vuelo limpio): ala y ambos jugadores, con cuenta atrás corta. Sirve para
+-- salir de un atasco; cuenta como ala perdida para el "viento a favor". El servidor decide si lo acepta.
 -- En pantallas táctiles se coloca arriba a la derecha (abajo están los botones de control).
 
 local Players = game:GetService("Players")
@@ -39,12 +40,12 @@ local function layout()
 		button.AnchorPoint = Vector2.new(1, 0)
 		button.Position = UDim2.new(1, -16, 0, 72) -- bajo el cronómetro del HUD
 		button.Size = UDim2.fromOffset(130, 42)
-		button.Text = "RESET"
+		button.Text = "RESPAWN"
 	else
 		button.AnchorPoint = Vector2.new(1, 1)
 		button.Position = UDim2.new(1, -20, 1, -20)
 		button.Size = UDim2.fromOffset(150, 48)
-		button.Text = if UserInputService.GamepadEnabled and not UserInputService.KeyboardEnabled then "RESET (Y)" else "RESET (R)"
+		button.Text = if UserInputService.GamepadEnabled and not UserInputService.KeyboardEnabled then "RESPAWN (Y)" else "RESPAWN (R)"
 	end
 end
 
