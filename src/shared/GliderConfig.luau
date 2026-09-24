@@ -115,8 +115,8 @@ local GliderConfig = {
 	-- El ala resbala por la superficie. Un golpe fuerte o un roce largo quitan un corazón; sin corazones se pierde
 	-- el ala y se reaparece en el último punto seguro. Suelos y tops nunca quitan corazones.
 	WingHearts = 2,
-	ImpactSpeed = 18, -- studs/s de velocidad CONTRA la superficie que cuentan como golpe (≈17° a 60 studs/s)
-	ScrapeDamageTime = 1.2, -- segundos de roce seguidos que cuestan un corazón
+	ImpactSpeed = 24, -- studs/s de velocidad CONTRA la superficie que cuentan como golpe (≈23° a 60 studs/s)
+	ScrapeDamageTime = 1.5, -- segundos de roce seguidos que cuestan un corazón
 	InvulnerableTime = 1.5, -- segundos sin daño tras perder un corazón (el ala parpadea)
 	ContactPush = 10, -- studs/s de empujón de separación al tocar
 	ContactPushDecay = 4, -- rapidez con que se desvanece ese empujón (1/s)
@@ -158,7 +158,7 @@ local GliderConfig = {
 	MaxDeltaTime = 1 / 30, -- el paso de simulación nunca supera esto
 
 	-- ── Cámara ─────────────────────────────────────────────────────────
-	CameraDistance = 22, -- studs detrás del ala
+	CameraDistance = 18, -- studs detrás del ala (más cerca: se nota más la velocidad)
 	CameraHeight = 7, -- studs por encima del ala
 	CameraLookAhead = 30, -- studs por delante a los que mira
 	CameraFocusDrop = 2, -- baja el foco para encuadrar ala + jugadores
@@ -167,7 +167,7 @@ local GliderConfig = {
 	CameraRollFactor = 0.2, -- fracción del alabeo del ala que copia la cámara
 	CameraMaxRoll = 7, -- grados máximos de alabeo de cámara
 	CameraRollResponse = 5, -- suavizado del alabeo de cámara (1/s)
-	CameraFieldOfView = 72,
+	CameraFieldOfView = 76,
 	CameraDiveFovBoost = 0.5, -- grados de FOV extra por cada stud/s de caída (sensación de picado)
 	CameraClimbFovDrop = 0.2, -- grados de FOV menos por cada stud/s de subida
 	CameraFovResponse = 4, -- suavizado del cambio de FOV (1/s)

@@ -18,11 +18,15 @@ MapBuilder.build({ dress = ARGS.dress ~= false })
 local FlightTester = require(ServerScriptService.Glider.DevTools.FlightTester:Clone())
 local Checkpoints = require(ServerScriptService.Glider.Checkpoints)
 local course = Checkpoints.new(workspace.Map)
-local pilots = { novice = FlightTester.NOVICE, calm = FlightTester.CALM, full = FlightTester.FULL }
+local pilots = { novice = FlightTester.NOVICE, calm = FlightTester.CALM, full = FlightTester.FULL, novicej = FlightTester.NOVICE_GAME, calmj = FlightTester.CALM_GAME, sloppy = FlightTester.SLOPPY }
 local pilot = table.clone(pilots[ARGS.pilot or "novice"])
 local index = ARGS.level or 1
 local every = ARGS.every or 0.25
 local nextT = 0
+pilot.timeOffset = ARGS.offset or 0
+pilot.onHit = function(t, _, name, where)
+	print(string.format("GOLPE t=%.2f contra %s a %s", t, name, where))
+end
 pilot.trace = function(t, pos, state, level)
 	if t < (ARGS.from or 0) or t > (ARGS.to or math.huge) or t < nextT then
 		return

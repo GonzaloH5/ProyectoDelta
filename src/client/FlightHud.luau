@@ -15,6 +15,7 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
 
 local Config = require(ReplicatedStorage.Glider.GliderConfig)
 local UiScale = require(script.Parent:WaitForChild("UiScale"))
@@ -206,7 +207,7 @@ energyHint.AnchorPoint = Vector2.new(1, 0.5)
 energyHint.Position = UDim2.new(0, -8, 0.5, 0)
 energyHint.Size = UDim2.fromOffset(90, 12)
 energyHint.TextXAlignment = Enum.TextXAlignment.Right
-energyHint.Text = "SPACE: PUMP"
+energyHint.Text = if UserInputService.KeyboardEnabled then "SPACE: PUMP" elseif UserInputService.GamepadEnabled then "A: PUMP" else "⇑ PUMP"
 
 -- Barra del ala (abajo centro).
 local barPanel = panel(gui, "Bar")

@@ -30,6 +30,7 @@ local Backdrop = require(script:WaitForChild("Backdrop"))
 local Ambient = require(script:WaitForChild("Ambient"))
 local ScreenFade = require(script:WaitForChild("ScreenFade"))
 require(script:WaitForChild("SettingsPanel")) -- botón ⚙ siempre visible
+require(script:WaitForChild("MoverVisuals")) -- obstáculos móviles animados en el cliente
 
 local player = Players.LocalPlayer
 Tutorial.show() -- al unirse a la sala

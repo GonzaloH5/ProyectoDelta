@@ -5,6 +5,8 @@
 --   toca al empezar (como los shapecasts de Roblox).
 -- · GetPartsInPart: SAT exacto entre la caja de consulta y cada forma.
 -- Las piezas se indexan en una rejilla 3D la primera vez que se consulta tras un cambio del mundo.
+-- Las piezas con atributo Motion (obstáculos móviles) van aparte: se prueban una a una en cada consulta con su
+-- CFrame actual, así moverlas no obliga a reindexar todo el mapa.
 
 do
 	local sim, isA = Roblox.sim, Roblox.isA
@@ -16,6 +18,7 @@ do
 	local shapes = {} -- lista de formas indexadas
 	local grid = {} -- clave de celda → lista de formas
 	local stamp = 0
+	local dynamicParts = {} -- piezas con atributo Motion
 
 	local function cellKey(ix, iy, iz)
 		return ((ix + OFFSET) * 16384 + (iy + OFFSET)) * 16384 + (iz + OFFSET)
@@ -105,8 +108,11 @@ do
 	local function rebuild()
 		shapes = {}
 		grid = {}
+		dynamicParts = {}
 		for _, d in workspace:GetDescendants() do
-			if isA(d._class, "BasePart") and d._props.CanQuery ~= false then
+			if isA(d._class, "BasePart") and d._props.CanQuery ~= false and d._attributes.Motion ~= nil then
+				table.insert(dynamicParts, d)
+			elseif isA(d._class, "BasePart") and d._props.CanQuery ~= false then
 				local shape = makeShape(d)
 				table.insert(shapes, shape)
 				local x0, x1 = floor(shape.minx / CELL), floor(shape.maxx / CELL)
@@ -156,6 +162,12 @@ do
 						end
 					end
 				end
+			end
+		end
+		for _, part in dynamicParts do
+			local shape = makeShape(part)
+			if shape.maxx >= minx and shape.minx <= maxx and shape.maxy >= miny and shape.miny <= maxy and shape.maxz >= minz and shape.minz <= maxz then
+				table.insert(out, shape)
 			end
 		end
 		return out

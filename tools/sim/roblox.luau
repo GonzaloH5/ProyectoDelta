@@ -765,8 +765,8 @@ InstanceMt.__newindex = function(inst, key, value)
 			sim.dirty = true
 		end
 	else
-		if key == "CFrame" and affectsQueries(inst) then
-			sim.dirty = true
+		if key == "CFrame" and affectsQueries(inst) and inst._attributes.Motion == nil then
+			sim.dirty = true -- los móviles (atributo Motion) no reindexan: physics los prueba aparte
 		end
 		inst._props[key] = value
 	end

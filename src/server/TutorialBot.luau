@@ -25,7 +25,7 @@ TutorialBot.LOOKAHEAD = 110 -- studs por delante a los que mira sobre la línea 
 local DEADBAND = 0.3 -- studs de tolerancia al colocarse
 local COUNTDOWN_HINT = "Slide along the bar with A / D (or the ◀ ▶ buttons)"
 
-export type Cue = { from: number, to: number, hint: string }
+export type Cue = { from: number, to: number, hint: string, pump: boolean }
 
 -- Personaje del bot (sin avatar de ningún usuario: descripción por defecto con colores propios).
 function TutorialBot.create(): Model?
@@ -54,7 +54,8 @@ function TutorialBot.create(): Model?
 	return character
 end
 
--- Indicaciones de un nivel del tutorial (atributo "Coach": "desde|hasta|lado|texto;…"; el lado ya no se usa).
+-- Indicaciones de un nivel del tutorial (atributo "Coach": "desde|hasta|acción|texto;…"; acción 2 = el bot se
+-- balancea (impulso) durante esa indicación).
 function TutorialBot.cuesOf(level: Instance?): { Cue }
 	local cues: { Cue } = {}
 	local raw = level and level:GetAttribute("Coach")
@@ -62,9 +63,9 @@ function TutorialBot.cuesOf(level: Instance?): { Cue }
 		return cues
 	end
 	for _, item in string.split(raw, ";") do
-		local from, to, _, hint = string.match(item, "^([^|]+)|([^|]+)|([^|]+)|(.*)$")
+		local from, to, action, hint = string.match(item, "^([^|]+)|([^|]+)|([^|]+)|(.*)$")
 		if from and to and hint then
-			table.insert(cues, { from = tonumber(from) or 0, to = tonumber(to) or 1, hint = hint })
+			table.insert(cues, { from = tonumber(from) or 0, to = tonumber(to) or 1, hint = hint, pump = tonumber(action) == 2 })
 		end
 	end
 	return cues
@@ -91,11 +92,13 @@ function TutorialBot.step(slots: { [number]: any }, state: string, cues: { Cue }
 	local target = math.clamp(2 * center - playerPosition, -outer, outer)
 	local delta = target - bot.position
 	bot.axis = if math.abs(delta) > DEADBAND then math.sign(delta) else 0
+	bot.pumping = false
 	if state == "Countdown" then
 		return COUNTDOWN_HINT
 	end
 	for _, cue in cues do
 		if progress >= cue.from and progress < cue.to then
+			bot.pumping = cue.pump and state == "Flying"
 			return cue.hint
 		end
 	end

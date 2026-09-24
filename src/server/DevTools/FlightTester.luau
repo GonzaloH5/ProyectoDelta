@@ -21,6 +21,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Config = require(ReplicatedStorage.Glider.GliderConfig)
 local GliderMath = require(ReplicatedStorage.Glider.GliderMath)
 local GliderPhysics = require(ReplicatedStorage.Glider.GliderPhysics)
+local Movers = require(ReplicatedStorage.Glider.Movers)
 
 local FlightTester = {}
 
@@ -60,7 +61,8 @@ end
 -- maxTurn / maxLift = fracción del giro y de la subida/bajada máximos que se atreve a usar el piloto.
 -- Opcionales: mode ("strict" | "game"), jitter = error de cada jugador al elegir su sitio (studs, aleatorio),
 -- reactions = { a, b } (cada jugador con su retraso), seed, stopOnLoss (false = reaparece y sigue),
--- pump (modo juego: los dos se balancean en las rectas mientras quede energía, como un dúo con prisa).
+-- pump (modo juego: los dos se balancean en las rectas mientras quede energía, como un dúo con prisa),
+-- timeOffset (s: desfase del reloj de los obstáculos móviles; checkRules prueba varios).
 FlightTester.FULL = { name = "completo", maxTurn = 1, maxLift = 1, lookahead = 100, reaction = 0.3, deadband = 0.15 }
 FlightTester.CALM = { name = "tranquilo", maxTurn = 0.62, maxLift = 0.68, lookahead = 130, reaction = 0.3, deadband = 0.15 }
 -- Novato: reacciona tarde, se coloca "más o menos" y mira menos adelante (va corrigiendo a toques).
@@ -173,6 +175,18 @@ function FlightTester.run(levelIndex: number, routeName: string?, pilot, root: I
 	local clean, sinceSafe = 0, 0
 	local strength = assistStrength(levelIndex, tutorial)
 	local windZones = GliderPhysics.windZones(level)
+	-- Obstáculos móviles del nivel: se colocan en cada paso según el reloj del vuelo (+ desfase).
+	local movers = {}
+	local moverFolder = level:FindFirstChild("Movers")
+	if moverFolder then
+		for _, part in moverFolder:GetChildren() do
+			local moverParams = part:IsA("BasePart") and part:GetAttribute("Motion") and Movers.read(part)
+			if moverParams then
+				table.insert(movers, { part = part, params = moverParams })
+			end
+		end
+	end
+	local timeOffset = pilot.timeOffset or 0
 	local energy, pumping = 1, false
 	local function where(): string
 		return string.format("%.0f de la entrada", (flat(pos - level.Entry.Position)).Magnitude)
@@ -180,6 +194,9 @@ function FlightTester.run(levelIndex: number, routeName: string?, pilot, root: I
 
 	while t < MAX_TIME do
 		t += DT
+		for _, mover in movers do
+			mover.part.CFrame = Movers.cframeAt(mover.params, t + timeOffset)
+		end
 
 		-- ── "Jugadores": miran un punto de la línea ideal `lookahead` studs por delante ──
 		while segment < #path - 1 do
@@ -252,6 +269,9 @@ function FlightTester.run(levelIndex: number, routeName: string?, pilot, root: I
 			local flown = GliderPhysics.fly(state, health, liftInput, balanceInput, pos, dims, DT, params, { now = t, assistTurn = assistTurn, wind = GliderPhysics.windAt(windZones, pos) })
 			if flown.event == "impact" or flown.event == "crash" then
 				hits += 1
+				if pilot.onHit then
+					pilot.onHit(t, pos, flown.contact and flown.contact.Instance:GetFullName() or "?", where()) -- depuración
+				end
 			end
 			if flown.event == "crash" or pos.Y < Config.KillHeight then
 				losses += 1
@@ -345,6 +365,9 @@ function FlightTester.run(levelIndex: number, routeName: string?, pilot, root: I
 	end
 
 	probe:Destroy()
+	for _, mover in movers do
+		mover.part.CFrame = Movers.cframeAt(mover.params, 0) -- vuelve a su posición de edición
+	end
 	local detail = if gameMode
 		then string.format("golpes %d · alas perdidas %d", hits, losses)
 		else string.format("margen mín %s", if minMargin == math.huge then ">32" else string.format("<%d%s", minMargin, closest))
@@ -385,6 +408,8 @@ FlightTester.RULES = {
 -- Tutorial (Map.Tutorial): es la primera vez que se vuela, así que el novato y el tranquilo pasan con ≥ 8.
 FlightTester.TUTORIAL_RULE = { upTo = math.huge, checks = { { FlightTester.NOVICE, 8 }, { FlightTester.CALM, 8 } } }
 
+local MOVER_OFFSETS = { 0, 0.9, 1.8, 2.7 }
+
 local function check(map: Instance?, from: number?, to: number?, fixedTier): string
 	local lines, failures = {}, 0
 	local index = from or 1
@@ -396,16 +421,32 @@ local function check(map: Instance?, from: number?, to: number?, fixedTier): str
 				break
 			end
 		end
+		-- Con obstáculos móviles, cada piloto vuela con 4 desfases del reloj: tiene que pasar con todos
+		-- (ningún móvil mata sin remedio: siempre hay un paso abierto).
+		local level = map:FindFirstChild(string.format("Level%02d", index)) :: Instance
+		local offsets = if level:FindFirstChild("Movers") then MOVER_OFFSETS else { 0 }
 		for _, check in tier.checks do
 			local pilot, required = check[1], check[2]
-			local line, info = FlightTester.run(index, nil, pilot, map)
-			local pass, need
-			if pilot.mode == "game" then
-				pass = info.ok and info.hits <= required
-				need = string.format("≤%d golpes", required)
-			else
-				pass = info.ok and info.minMargin > required
-				need = string.format("margen ≥%d", required)
+			local line, pass, need
+			for _, offset in offsets do
+				local flown = table.clone(pilot)
+				flown.timeOffset = offset
+				local offsetLine, info = FlightTester.run(index, nil, flown, map)
+				local ok
+				if pilot.mode == "game" then
+					ok = info.ok and info.hits <= required
+					need = string.format("≤%d golpes", required)
+				else
+					ok = info.ok and info.minMargin > required
+					need = string.format("margen ≥%d", required)
+				end
+				if line == nil or not ok then
+					line = if #offsets > 1 then string.format("%s [desfase %.1fs]", offsetLine, offset) else offsetLine
+				end
+				pass = (pass ~= false) and ok
+				if not ok then
+					break
+				end
 			end
 			if not pass then
 				failures += 1

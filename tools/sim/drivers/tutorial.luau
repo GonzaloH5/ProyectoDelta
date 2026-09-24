@@ -11,7 +11,15 @@ local MapBuilder = require(game.ServerScriptService.Glider.DevTools.MapBuilder:C
 MapBuilder.build({ dress = false })
 local tutorial = workspace.Map:FindFirstChild("Tutorial")
 check("existe Map.Tutorial", tutorial ~= nil)
-check("tres tramos y meta", tutorial and tutorial:FindFirstChild("Level03") and not tutorial:FindFirstChild("Level04") and tutorial:FindFirstChild("FinishIsland"))
+check("cuatro tramos y meta", tutorial and tutorial:FindFirstChild("Level04") and not tutorial:FindFirstChild("Level05") and tutorial:FindFirstChild("FinishIsland"))
+-- Tramo BOOST: el bot se balancea en las indicaciones con acción 2.
+local TutorialBot = require(game.ServerScriptService.Glider.TutorialBot)
+local boostCues = TutorialBot.cuesOf(tutorial.Level04)
+local pumpSlots = { [-1] = { rig = true, position = -3, axis = 0 }, [1] = { rig = true, position = 3, axis = 0 } }
+TutorialBot.step(pumpSlots, "Flying", boostCues, 0.1, 0)
+local pumpsEarly = pumpSlots[1].pumping == true
+TutorialBot.step(pumpSlots, "Flying", boostCues, 0.5, 0)
+check("el bot se balancea en BOOST y para con las plumas", pumpsEarly and pumpSlots[1].pumping == false)
 check("despegue", tutorial and tutorial.StartIsland:FindFirstChild("LaunchPoint") ~= nil)
 
 local TutorialBot = require(game.ServerScriptService.Glider.TutorialBot)

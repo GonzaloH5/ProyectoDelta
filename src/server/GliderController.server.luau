@@ -30,6 +30,7 @@ local CollisionGroups = require(script.Parent.CollisionGroups)
 local DuoLeaderboard = require(script.Parent.DuoLeaderboard)
 local GliderSession = require(script.Parent.GliderSession)
 local LevelStreaming = require(script.Parent.LevelStreaming)
+local MoverService = require(script.Parent.MoverService)
 local Lobby = require(script.Parent.Lobby)
 local PlayerStats = require(script.Parent.PlayerStats)
 local TutorialBot = require(script.Parent.TutorialBot)
@@ -43,6 +44,7 @@ local mainCourse = Checkpoints.new(map)
 local tutorialCourse = Checkpoints.new(tutorialMap)
 LevelStreaming.load(map)
 LevelStreaming.load(tutorialMap)
+MoverService.load(map) -- incluye Map.Tutorial (está dentro de Map)
 DuoLeaderboard.start(mainCourse:count())
 
 -- Indicaciones del bot por tramo del tutorial.
@@ -588,6 +590,15 @@ RunService.Heartbeat:Connect(function(rawDt)
 		end
 		session:step(dt, probeParams)
 	end
+
+	-- Obstáculos móviles: colisionadores cerca de las alas en vuelo.
+	local flyingPositions = {}
+	for session in sessions do
+		if not session.finished then
+			table.insert(flyingPositions, session.root.Position)
+		end
+	end
+	MoverService.step(flyingPositions)
 
 	lobbyTimer += rawDt
 	if lobbyTimer >= Config.LobbyTickInterval then
