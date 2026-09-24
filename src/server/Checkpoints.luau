@@ -164,6 +164,44 @@ function Checkpoints.progress(self: Course, index: number, position: Vector3): n
 	return math.clamp(best / info.total, 0, 1)
 end
 
+-- Punto de la línea ideal del nivel `distance` studs por delante de la proyección de `position` (para el
+-- piloto del bot del tutorial). Pasado el final, sigue en la dirección del último tramo. nil sin línea.
+function Checkpoints.lookahead(self: Course, index: number, position: Vector3, distance: number): Vector3?
+	local info = self.levels[index]
+	if not info or #info.points < 2 then
+		return nil
+	end
+	local points = info.points
+	local segment, cursor, bestDistance = 2, points[1], math.huge
+	for i = 2, #points do
+		local a, b = points[i - 1], points[i]
+		local ab = b - a
+		local t = math.clamp((position - a):Dot(ab) / math.max(ab:Dot(ab), 1e-6), 0, 1)
+		local projected = a + ab * t
+		local d = (projected - position).Magnitude
+		if d < bestDistance then
+			bestDistance, segment, cursor = d, i, projected
+		end
+	end
+	-- Ya pasada la salida (en el valle): el objetivo sigue delante del ala, en la dirección del último tramo.
+	local lastDir = points[#points] - points[#points - 1]
+	lastDir = if lastDir.Magnitude > 1e-6 then lastDir.Unit else Vector3.xAxis
+	local beyond = (position - points[#points]):Dot(lastDir)
+	if segment == #points and beyond > 0 then
+		return points[#points] + lastDir * (beyond + distance)
+	end
+	local remaining = distance
+	for i = segment, #points do
+		local step = (points[i] - cursor).Magnitude
+		if step >= remaining then
+			return cursor:Lerp(points[i], remaining / math.max(step, 1e-6))
+		end
+		remaining -= step
+		cursor = points[i]
+	end
+	return cursor + lastDir * remaining
+end
+
 -- Primer checkpoint con índice > afterIndex cuyo plano se cruzó hacia adelante entre from y to.
 function Checkpoints.crossed(self: Course, from: Vector3, to: Vector3, afterIndex: number): Checkpoint?
 	for _, checkpoint in self.list do

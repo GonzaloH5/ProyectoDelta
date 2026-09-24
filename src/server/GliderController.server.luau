@@ -346,9 +346,15 @@ RunService.Heartbeat:Connect(function(rawDt)
 			session.glider:SetAttribute("LevelProgress", course:progress(levelOf(session), session.root.Position))
 		end
 		if tutorialRuns[session] then
+			-- Bot: pilota el rumbo hacia la línea ideal del tramo; la subida y bajada las decide el jugador.
 			local level = levelOf(session)
-			local progress = if session.flight.state == "Flying" then course:progress(level, session.root.Position) else 0
-			local hint = TutorialBot.step(session.slots, session.flight.state, tutorialCues[level] or {}, progress)
+			local flying = session.flight.state == "Flying"
+			local position = session.root.Position
+			local progress = if flying then course:progress(level, position) else 0
+			local balance = if flying
+				then TutorialBot.steer(position, CFrame.Angles(0, session.flight.yaw, 0).LookVector, course:lookahead(level, position, TutorialBot.LOOKAHEAD))
+				else 0
+			local hint = TutorialBot.step(session.slots, session.flight.state, tutorialCues[level] or {}, progress, balance)
 			if session.glider:GetAttribute("TutorialHint") ~= hint then
 				session.glider:SetAttribute("TutorialHint", hint)
 			end

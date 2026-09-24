@@ -193,9 +193,10 @@ siempre en la salida.
 - **Recorrido** `Map.Tutorial` (lo genera `MapBuilder.build()`, lejos del lobby y del recorrido): tres tramos cortos
   vestidos de Pradera, cada uno con su checkpoint: **Climb** (una loma), **Dive** (una viga) y **Turn** (izquierda y
   derecha). Si chocas, repites el tramo. Al terminar: "TUTORIAL COMPLETE!" y vuelves al lobby.
-- **Bot compañero** (`TutorialBot`): un personaje R15 colgado en el otro extremo de la barra.
-  - Al subir y bajar hace de **espejo**: la maniobra depende de ti.
-  - En los giros se **inclina** hacia el lado de la curva y tú tienes que acompañarlo.
+- **Bot compañero** (`TutorialBot`): un personaje R15 colgado en el otro extremo de la barra que **lleva el rumbo**:
+  mira la línea ideal del tramo ~110 studs por delante (como el piloto del `FlightTester`) y se coloca en la barra
+  para que el peso de los dos gire el ala hacia ella. Yendo recto eso es el espejo de tu posición, así que **subir
+  y bajar depende de ti**; en las curvas se va hacia ese lado (y te pide acompañarlo).
 - **Indicaciones grandes en pantalla** (`TutorialHints`, atributo `TutorialHint` del ala) y botón **SKIP TUTORIAL**.
 - No cuenta para estadísticas, choques ni clasificación. La imagen de tutorial antigua queda desactivada
   (`ShowTutorialOnJoin = false`).
@@ -251,7 +252,8 @@ python3 tools/sim/run.py drivers/pilots.luau from=11     # los 3 pilotos en cada
 python3 tools/sim/run.py drivers/audit.luau              # regla de oro (MapDresser.audit) en todos los niveles
 python3 tools/sim/run.py drivers/layout.luau             # trazado: extensión, separación entre filas y SVG
 python3 tools/sim/run.py drivers/leaderboard.luau        # DuoLeaderboard y PlayerStats con DataStores falsos
-python3 tools/sim/run.py drivers/tutorial.luau           # Map.Tutorial y el bot (indicaciones, espejo, giros)
+python3 tools/sim/run.py drivers/tutorial.luau           # Map.Tutorial y el bot (indicaciones, rumbo, colocación)
+python3 tools/sim/run.py drivers/tutorialflight.luau     # vuela el tutorial con el bot (player=idle: sin moverse)
 python3 tools/sim/run.py drivers/selftest.luau           # pruebas de la propia imitación
 ```
 

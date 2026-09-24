@@ -1574,9 +1574,8 @@ end
 
 -- ── Tutorial: recorrido corto junto al mundo principal ───────────────────
 -- Tres tramos muy fáciles con un bot de compañero (TutorialBot): subir, bajar y girar. Va en Map.Tutorial,
--- lejos del lobby y de las filas del recorrido. coach = indicaciones por tramo, en fracciones de la Route:
--- { from, to, hint, lean? } (lean = -1 izquierda / +1 derecha: el bot se inclina hacia ese lado; sin lean,
--- el bot hace de espejo del jugador y la subida o bajada depende de él).
+-- lejos del lobby y de las filas del recorrido. El bot pilota el rumbo por la línea ideal y el jugador decide
+-- subir o bajar. coach = indicaciones de texto por tramo, en fracciones de la Route: { from, to, hint }.
 local TUTORIAL_START = Vector3.new(0, CRUISE, 4000)
 local TUTORIAL_LEVELS = {
 	{ -- T1: subir por encima de una loma baja.
@@ -1624,9 +1623,9 @@ local TUTORIAL_LEVELS = {
 			c.guide(250 + 450 * math.rad(35) + 250 + 450 * math.rad(35) / 2, 0, 0)
 		end,
 		coach = {
-			{ 0.1, 0.42, "Lean LEFT together to turn left!", -1 },
+			{ 0.1, 0.42, "Lean LEFT with the Coach to turn left!" },
 			{ 0.42, 0.52, "Back to the center" },
-			{ 0.52, 0.84, "Lean RIGHT together to turn right!", 1 },
+			{ 0.52, 0.84, "Lean RIGHT with the Coach to turn right!" },
 			{ 0.84, 1, "Nice! Keep it straight to the finish" },
 		},
 	},

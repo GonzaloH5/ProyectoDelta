@@ -1,12 +1,15 @@
 --!strict
 -- Compañero bot del tutorial: un personaje R15 colgado del ala como un jugador más (GliderSession.addBot) y
--- movido por el servidor en cada paso. Sigue las indicaciones que MapBuilder deja en cada tramo del
--- tutorial (atributo "Coach" del nivel, fracciones de su Route):
---   · sin lado (subir / bajar): hace de ESPEJO del jugador → la sustentación depende de lo que haga él
---     y el ala va recta.
---   · con lado (-1 izquierda / +1 derecha): se inclina hacia ese lado; el jugador tiene que acompañarlo
---     para girar de verdad (si se queda al otro lado, el peso se equilibra y el ala no gira).
--- Además publica en el ala el texto de la indicación (atributo TutorialHint) para la pantalla del jugador.
+-- movido por el servidor en cada paso.
+--
+-- El bot PILOTA el rumbo: mira un punto de la línea ideal del tramo (Route) unos studs por delante
+-- (persecución pura, como FlightTester) y se coloca en la barra para que el peso de los dos juntos dé el giro
+-- necesario: centro de masa deseado = −giro × media barra, así que su sitio = 2 × centro − posición del jugador.
+--   · Si vais bien encarados, eso es justo el ESPEJO del jugador: el ala va recta y subir o bajar depende de él.
+--   · Si hay que girar, el bot se va hacia ese lado; si el jugador se queda al otro, el peso se compensa y el
+--     giro sale a medias: hay que acompañarlo (lo dicen las indicaciones de las curvas).
+-- Las indicaciones de texto vienen del atributo "Coach" de cada tramo (MapBuilder: TUTORIAL_LEVELS.coach) y se
+-- publican en el ala (atributo TutorialHint) para la pantalla del jugador.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -16,11 +19,11 @@ local Config = require(ReplicatedStorage:WaitForChild("Glider"):WaitForChild("Gl
 local TutorialBot = {}
 
 TutorialBot.SIDE = 1 -- el bot va en el hueco derecho; el jugador, en el izquierdo
-local LEAN = 2.2 -- studs desde el centro de la barra a los que se inclina el bot (no del todo: el jugador cuenta)
+TutorialBot.LOOKAHEAD = 110 -- studs por delante a los que mira sobre la línea ideal
 local DEADBAND = 0.3 -- studs de tolerancia al colocarse
 local COUNTDOWN_HINT = "Slide along the bar with A / D (or the ◀ ▶ buttons)"
 
-export type Cue = { from: number, to: number, lean: number, hint: string }
+export type Cue = { from: number, to: number, hint: string }
 
 -- Personaje del bot (sin avatar de ningún usuario: descripción por defecto con colores propios).
 function TutorialBot.create(): Model?
@@ -49,7 +52,7 @@ function TutorialBot.create(): Model?
 	return character
 end
 
--- Indicaciones de un nivel del tutorial (atributo "Coach": "desde|hasta|lado|texto;…").
+-- Indicaciones de un nivel del tutorial (atributo "Coach": "desde|hasta|lado|texto;…"; el lado ya no se usa).
 function TutorialBot.cuesOf(level: Instance?): { Cue }
 	local cues: { Cue } = {}
 	local raw = level and level:GetAttribute("Coach")
@@ -57,38 +60,60 @@ function TutorialBot.cuesOf(level: Instance?): { Cue }
 		return cues
 	end
 	for _, item in string.split(raw, ";") do
-		local from, to, lean, hint = string.match(item, "^([^|]+)|([^|]+)|([^|]+)|(.*)$")
-		if from and to and lean and hint then
-			table.insert(cues, { from = tonumber(from) or 0, to = tonumber(to) or 1, lean = tonumber(lean) or 0, hint = hint })
+		local from, to, _, hint = string.match(item, "^([^|]+)|([^|]+)|([^|]+)|(.*)$")
+		if from and to and hint then
+			table.insert(cues, { from = tonumber(from) or 0, to = tonumber(to) or 1, hint = hint })
 		end
 	end
 	return cues
 end
 
--- Un paso del bot. slots = huecos de la sesión (bot en SIDE, jugador en -SIDE); state = estado del vuelo;
--- progress = fracción recorrida del nivel. Devuelve el texto de la indicación actual.
-function TutorialBot.step(slots: { [number]: any }, state: string, cues: { Cue }, progress: number): string
+local function invertCurve(value: number, exponent: number): number
+	value = math.clamp(value, -1, 1)
+	return math.sign(value) * math.abs(value) ^ (1 / exponent)
+end
+
+-- Balance (−1…1, positivo = girar a la izquierda) para ir hacia `goal` desde `position` con rumbo `forward`.
+function TutorialBot.steer(position: Vector3, forward: Vector3, goal: Vector3?): number
+	if not goal then
+		return 0
+	end
+	local toGoal = (goal - position) * Vector3.new(1, 0, 1)
+	local flat = forward * Vector3.new(1, 0, 1)
+	if toGoal.Magnitude < 1e-3 or flat.Magnitude < 1e-3 then
+		return 0
+	end
+	flat = flat.Unit
+	-- Ángulo con signo: positivo si el objetivo queda a la izquierda (Y de forward × toGoal).
+	local alpha = math.atan2(flat:Cross(toGoal).Y, flat:Dot(toGoal))
+	local wantTurn = math.clamp(math.deg(2 * Config.ForwardSpeed * math.sin(alpha) / math.max(toGoal.Magnitude, 1)), -Config.MaxTurnRate, Config.MaxTurnRate)
+	return invertCurve(wantTurn / Config.MaxTurnRate, Config.BalanceCurve)
+end
+
+-- Un paso del bot. slots = huecos de la sesión (bot en SIDE, jugador en -SIDE); balance = giro deseado
+-- (TutorialBot.steer; 0 en la cuenta atrás); progress = fracción recorrida del nivel.
+-- Devuelve el texto de la indicación actual.
+function TutorialBot.step(slots: { [number]: any }, state: string, cues: { Cue }, progress: number, balance: number): string
 	local bot, player = slots[TutorialBot.SIDE], slots[-TutorialBot.SIDE]
 	if not (bot and bot.rig) then
 		return ""
 	end
-	local cue: Cue? = nil
-	for _, candidate in cues do
-		if progress >= candidate.from and progress < candidate.to then
-			cue = candidate
-			break
-		end
-	end
-	local target = if cue and cue.lean ~= 0
-		then cue.lean * LEAN
-		elseif player and player.rig then -player.position -- espejo
-		else TutorialBot.SIDE * (Config.BarInnerOffset + Config.StartOutward * (Config.BarOuterOffset - Config.BarInnerOffset))
+	local outer = Config.BarOuterOffset
+	local playerPosition = if player and player.rig then player.position else -bot.position
+	-- balanceInput = −centro / media barra → centro deseado = −balance × media barra.
+	local center = -balance * (outer - Config.BarInnerOffset) / 2
+	local target = math.clamp(2 * center - playerPosition, -outer, outer)
 	local delta = target - bot.position
 	bot.axis = if math.abs(delta) > DEADBAND then math.sign(delta) else 0
 	if state == "Countdown" then
 		return COUNTDOWN_HINT
 	end
-	return if cue then cue.hint else ""
+	for _, cue in cues do
+		if progress >= cue.from and progress < cue.to then
+			return cue.hint
+		end
+	end
+	return ""
 end
 
 return TutorialBot
