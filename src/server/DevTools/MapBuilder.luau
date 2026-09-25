@@ -400,10 +400,10 @@ local function makeContext(level: Model, frames, marks, scale: number?)
 		table.insert(ctx.points, { s = s, u = u, v = v, feature = true })
 	end
 
-	-- Anillo guía amarillo (visual, se atraviesa).
+	-- Anillo guía amarillo (visual, se atraviesa): aro circular que cabe en el hueco w × h.
 	function ctx.guide(s, u, v, w, h)
 		local f = at(s)
-		ring(guides, nextName("Ring"), "Guide", frameCFrame(f) * CFrame.new(u, v, 0), w or 120, h or 85, 5, 4)
+		circleRing(guides, nextName("Ring"), "Guide", frameCFrame(f) * CFrame.new(u, v, 0), math.min(w or 120, h or 85) / 2, 4, 20)
 	end
 
 	-- COLINA en el suelo (cuña de subida + cuña de bajada): hay que pasar por ENCIMA.

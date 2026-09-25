@@ -401,8 +401,43 @@ local function obstacle(ctx, parent, part: BasePart)
 	end
 end
 
+-- Anillo guía circular: segmentos más finos (mismo hueco), color del bioma y cuatro gemas en las diagonales.
+local function circleGuide(ctx, parent, segments: { BasePart })
+	local center = Vector3.zero
+	for _, piece in segments do
+		center += piece.Position
+	end
+	center /= #segments
+	local first = segments[1]
+	local radius = (first.Position - center).Magnitude
+	local thin = 2.5
+	for _, piece in segments do
+		local d = (piece.Size.Y - thin) / 2
+		piece.Size = Vector3.new(piece.Size.X, thin, thin)
+		piece.CFrame *= CFrame.new(0, -d, 0) -- hacia el centro: el hueco no cambia
+		piece.Color = ctx.biome.guide
+	end
+	-- Marco del aro: el eje Z del segmento es el del recorrido; el primero está arriba (ángulo 0).
+	local up = (first.Position - center).Unit
+	local frame = CFrame.fromMatrix(center, first.CFrame.LookVector:Cross(up), up)
+	for k = 0, 3 do
+		local angle = math.pi / 4 + k * math.pi / 2
+		ctx.kit.gem(parent, "GuideGem", "GuideGem", 5, frame * CFrame.Angles(0, 0, angle) * CFrame.new(0, radius - 1, 0))
+	end
+end
+
 -- Anillo guía: barras más finas (siguen siendo el mismo hueco) y una gema en cada esquina.
 local function guideRing(ctx, parent, ring: Instance)
+	local segments = {}
+	for _, child in ring:GetChildren() do
+		if child:IsA("BasePart") and child.Name == "Segment" then
+			table.insert(segments, child)
+		end
+	end
+	if #segments >= 3 then
+		circleGuide(ctx, parent, segments)
+		return
+	end
 	local top, bottom, left, right = ring:FindFirstChild("Top"), ring:FindFirstChild("Bottom"), ring:FindFirstChild("Left"), ring:FindFirstChild("Right")
 	if not (top and bottom and left and right) then
 		return
