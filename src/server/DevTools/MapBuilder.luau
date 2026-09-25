@@ -1932,8 +1932,10 @@ local TUTORIAL_LEVELS = {
 			c.ridge(560, 10, 14, 20)
 		end,
 		coach = {
-			{ 0, 0.62, "Both move OUT to climb over the hill!" },
-			{ 0.62, 1, "Back to the CENTER to glide down" },
+			{ 0, 0.3, "The Coach only does HALF. Move OUT with him to climb!" },
+			{ 0.3, 0.62, "Both OUT! If only one opens, you climb too slowly" },
+			{ 0.62, 0.8, "Back to the CENTER to glide down" },
+			{ 0.8, 1, "The Coach slipped! Lean the OTHER way to fly straight", 3 },
 		},
 	},
 	{ -- T2: bajar por debajo de una viga.
@@ -1946,31 +1948,32 @@ local TUTORIAL_LEVELS = {
 			c.lintel(470, 9, 50)
 		end,
 		coach = {
-			{ 0, 0.55, "Both move IN to the center to dive under the beam!" },
+			{ 0, 0.2, "Watch out: the Coach is wobbling. Keep the wing straight!", 3 },
+			{ 0.2, 0.55, "Both move IN to the center to dive under the beam!" },
 			{ 0.55, 1, "Move OUT again to climb back up" },
 		},
 	},
 	{ -- T3: girar a la izquierda y a la derecha inclinándose los dos hacia el mismo lado.
 		title = "Turn",
 		biome = "Pradera",
-		width = 320,
-		height = 230,
+		width = 230,
+		height = 220,
 		path = {
 			{ kind = "straight", length = 250 },
-			{ kind = "arc", angle = 35, radius = 450 },
+			{ kind = "arc", angle = 55, radius = 250 },
 			{ kind = "straight", length = 250 },
-			{ kind = "arc", angle = -35, radius = 450 },
-			{ kind = "straight", length = 250 },
+			{ kind = "arc", angle = -55, radius = 250 },
+			{ kind = "straight", length = 350 },
 		},
 		features = function(c)
-			c.guide(250 + 450 * math.rad(35) / 2, 0, 0)
-			c.guide(250 + 450 * math.rad(35) + 250 + 450 * math.rad(35) / 2, 0, 0)
+			c.guide(250 + 250 * math.rad(55) / 2, 0, 0)
+			c.guide(250 + 250 * math.rad(55) + 250 + 250 * math.rad(55) / 2, 0, 0)
 		end,
 		coach = {
-			{ 0.1, 0.42, "Lean LEFT with the Coach to turn left!" },
+			{ 0.1, 0.42, "Lean LEFT too: the Coach alone only turns half!" },
 			{ 0.42, 0.52, "Back to the center" },
-			{ 0.52, 0.84, "Lean RIGHT with the Coach to turn right!" },
-			{ 0.84, 1, "Nice! Keep it straight to the finish" },
+			{ 0.52, 0.84, "Lean RIGHT together to turn right!" },
+			{ 0.84, 1, "He's slipping again! Correct it and keep straight", 3 },
 		},
 	},
 	{ -- T4: impulso: balancearse con Espacio (el bot también) y pasar por anillos que recargan la energía.

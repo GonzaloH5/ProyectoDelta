@@ -25,9 +25,9 @@ check("despegue", tutorial and tutorial.StartIsland:FindFirstChild("LaunchPoint"
 local TutorialBot = require(game.ServerScriptService.Glider.TutorialBot)
 local cues = TutorialBot.cuesOf(tutorial.Level03)
 check("indicaciones del giro", #cues == 4, tostring(#cues))
-check("texto de la indicación", cues[1].hint == "Lean LEFT with the Coach to turn left!", cues[1] and cues[1].hint)
+check("texto de la indicación", cues[1].hint == "Lean LEFT too: the Coach alone only turns half!", cues[1] and cues[1].hint)
 local climb = TutorialBot.cuesOf(tutorial.Level01)
-check("indicaciones de la subida", #climb == 2)
+check("indicaciones de la subida (con resbalón al final)", #climb == 4 and climb[4].drift == true and not climb[1].drift)
 
 -- Rumbo: objetivo a la izquierda → balance positivo (girar a la izquierda), a la derecha → negativo.
 local forward = Vector3.new(1, 0, 0) -- mirando a +X, la izquierda es -Z
@@ -35,18 +35,25 @@ check("objetivo delante: recto", math.abs(TutorialBot.steer(Vector3.zero, forwar
 check("objetivo a la izquierda", TutorialBot.steer(Vector3.zero, forward, Vector3.new(100, 0, -30)) > 0)
 check("objetivo a la derecha", TutorialBot.steer(Vector3.zero, forward, Vector3.new(100, 0, 30)) < 0)
 
--- Colocación: recto = espejo del jugador; girar = el bot desplaza el peso hacia ese lado.
-local slots = { [-1] = { rig = true, position = -3, axis = 0 }, [1] = { rig = true, position = 3, axis = 0 } }
-local hint = TutorialBot.step(slots, "Flying", climb, 0.3, 0)
-check("recto: espejo (el bot se queda en +3)", slots[1].axis == 0 and hint == climb[1].hint)
+-- Colocación: el bot hace SU mitad y no copia al jugador.
+local neutral = TutorialBot.targetFor(0.5, 0)
+local slots = { [-1] = { rig = true, position = -3, axis = 0 }, [1] = { rig = true, position = neutral, axis = 0 } }
+local hint = TutorialBot.step(slots, "Flying", climb, 0.1, 0, 0.5, 0)
+check("recto y nivelado: el bot se queda en su sitio", slots[1].axis == 0 and hint == climb[1].hint)
 slots[-1].position = -1
-TutorialBot.step(slots, "Flying", climb, 0.3, 0)
-check("recto: el jugador se centra y el bot también", slots[1].axis == -1)
-TutorialBot.step(slots, "Flying", cues, 0.2, 0.5)
+TutorialBot.step(slots, "Flying", climb, 0.1, 0, 0.5, 0)
+check("no copia al jugador (si el jugador se centra, el bot no se mueve)", slots[1].axis == 0)
+TutorialBot.step(slots, "Flying", climb, 0.1, 0, 0.9, 0)
+check("subir: el bot se abre (su mitad)", slots[1].axis == 1)
+TutorialBot.step(slots, "Flying", cues, 0.2, 0.5, 0.5, 0)
 check("girar a la izquierda: el bot va a la izquierda", slots[1].axis == -1)
-slots[1].position = 0
-TutorialBot.step(slots, "Flying", cues, 0.6, -0.5)
+slots[1].position = neutral
+TutorialBot.step(slots, "Flying", cues, 0.6, -0.5, 0.5, 0)
 check("girar a la derecha: el bot va a la derecha", slots[1].axis == 1)
+-- Resbalón: aunque no haga falta girar, el bot se inclina solo (el jugador tiene que compensar).
+slots[1].position = neutral
+TutorialBot.step(slots, "Flying", climb, 0.9, 0, 0.5, 2)
+check("resbalón: el bot se desplaza sin que haga falta girar", slots[1].axis ~= 0)
 check("cuenta atrás", TutorialBot.step(slots, "Countdown", cues, 0, 0):find("A / D") ~= nil)
 
 -- Los tramos pasados: el objetivo sigue delante aunque el ala ya haya salido del tramo.

@@ -207,12 +207,15 @@ siempre en la salida.
   lobby sale una ventana: *First time flying?* → **PLAY TUTORIAL** / **NO THANKS**. Responda lo que responda, se
   guarda `TutorialDone` y no vuelve a salir. (En Studio sin API Services no se guarda: sale en cada Play.)
 - **Recorrido** `Map.Tutorial` (lo genera `MapBuilder.build()`, lejos del lobby y del recorrido): tres tramos cortos
-  vestidos de Pradera, cada uno con su checkpoint: **Climb** (una loma), **Dive** (una viga) y **Turn** (izquierda y
-  derecha). Si pierdes el ala, reapareces en el último punto seguro. Al terminar: "TUTORIAL COMPLETE!" y vuelves al lobby.
-- **Bot compañero** (`TutorialBot`): un personaje R15 colgado en el otro extremo de la barra que **lleva el rumbo**:
-  mira la línea ideal del tramo ~110 studs por delante (como el piloto del `FlightTester`) y se coloca en la barra
-  para que el peso de los dos gire el ala hacia ella. Yendo recto eso es el espejo de tu posición, así que **subir
-  y bajar depende de ti**; en las curvas se va hacia ese lado (y te pide acompañarlo).
+  vestidos de Pradera, cada uno con su checkpoint: **Climb** (una loma), **Dive** (una viga), **Turn** (izquierda y
+  derecha) y **Boost** (balanceo, anillos y plumas). Si pierdes el ala, reapareces en el último punto seguro. Al terminar: "TUTORIAL COMPLETE!" y vuelves al lobby.
+- **Bot compañero** (`TutorialBot`): un personaje R15 colgado en el otro extremo de la barra que hace **solo su
+  mitad**, como un compañero de verdad: calcula lo que hace falta para seguir la línea ideal (subir o bajar y girar)
+  y se coloca donde le toca a él. **No copia al jugador**: si no te abres con él, subes a medias; si no te inclinas
+  con él, las curvas (cerradas, radio 250) salen a medias. En algunos momentos **resbala** (se inclina solo hacia un
+  lado y a otro, indicación "The Coach slipped!") y hay que compensarlo inclinándose al contrario para ir recto.
+  Con `tools/sim/drivers/tutorialflight.luau`: un jugador que solo sube y baja (`player=lift`) acaba chocando; uno
+  que también corrige el rumbo (`player=full`, por defecto) llega a la meta.
 - **Indicaciones grandes en pantalla** (`TutorialHints`, atributo `TutorialHint` del ala) y botón **SKIP TUTORIAL**.
 - No cuenta para estadísticas, alas perdidas ni clasificación. La imagen de tutorial antigua queda desactivada
   (`ShowTutorialOnJoin = false`).

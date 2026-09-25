@@ -11,7 +11,7 @@
 -- Las alas y jugadores de distintos dúos no chocan entre sí (CollisionGroups) y cada
 -- cliente ve a los otros dúos ligeramente transparentes (GliderClient).
 --
--- Tutorial (Map.Tutorial): un jugador + un bot compañero (TutorialBot), 3 tramos cortos. Solo la primera
+-- Tutorial (Map.Tutorial): un jugador + un bot compañero (TutorialBot), 4 tramos cortos. Solo la primera
 -- vez que alguien entra (sin PlayerStats.TutorialDone) se le ofrece en pantalla; acepte o rechace, ya no se
 -- vuelve a ofrecer. Durante el tutorial se puede saltar (botón SKIP o Lobby). No cuenta para estadísticas
 -- ni clasificación.
@@ -536,13 +536,13 @@ RunService.Heartbeat:Connect(function(rawDt)
 			session.glider:SetAttribute("RouteAhead", course:lookahead(level, position, Config.CameraRouteLookahead))
 		end
 		if tutorialRuns[session] then
-			-- Bot: pilota el rumbo hacia la línea ideal del tramo; la subida y bajada las decide el jugador.
+			-- Bot: hace su mitad (subir/bajar y girar hacia la línea ideal); la otra mitad la tiene que hacer el jugador.
 			local flying = session.flight.state == "Flying"
 			local progress = if flying then course:progress(level, position) else 0
-			local balance = if flying
-				then TutorialBot.steer(position, GliderPhysics.forwardOf(session.physics.yaw), course:lookahead(level, position, TutorialBot.LOOKAHEAD))
-				else 0
-			local hint = TutorialBot.step(session.slots, session.flight.state, tutorialCues[level] or {}, progress, balance)
+			local goal = course:lookahead(level, position, TutorialBot.LOOKAHEAD)
+			local balance = if flying then TutorialBot.steer(position, GliderPhysics.forwardOf(session.physics.yaw), goal) else 0
+			local lift = if flying then TutorialBot.liftFor(position, goal, session.physics.speed) else Config.NeutralLiftPoint
+			local hint = TutorialBot.step(session.slots, session.flight.state, tutorialCues[level] or {}, progress, balance, lift, session.flight.time)
 			if session.glider:GetAttribute("TutorialHint") ~= hint then
 				session.glider:SetAttribute("TutorialHint", hint)
 			end

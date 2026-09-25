@@ -1,7 +1,8 @@
 -- Vuela el tutorial con el bot de verdad (TutorialBot.steer/step) y un jugador simulado, con las mismas
--- ecuaciones y detección de choque que FlightTester / GliderSession. El jugador solo decide SUBIR o BAJAR
--- (se abre o se cierra en su lado de la barra); el rumbo lo lleva el bot. ARGS.player = "lift" (por defecto)
--- o "idle" (no se mueve nunca: debe chocar en la loma, pero no por irse contra las paredes antes).
+-- ecuaciones y detección de choque que FlightTester / GliderSession, con las indicaciones reales (resbalones).
+-- El bot solo hace su mitad. ARGS.player = "full" (por defecto: hace su mitad de subir/bajar y de girar, y
+-- compensa los resbalones), "lift" (solo sube y baja: el ala gira a medias y los resbalones la desvían) o
+-- "idle" (no se mueve nunca: tiene que chocar).
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Config = require(ReplicatedStorage.Glider.GliderConfig)
 local GliderMath = require(ReplicatedStorage.Glider.GliderMath)
@@ -22,12 +23,16 @@ local tutorial = workspace.Map.Tutorial
 local Checkpoints = require(game.ServerScriptService.Glider.Checkpoints)
 local TutorialBot = require(game.ServerScriptService.Glider.TutorialBot)
 local course = Checkpoints.new(tutorial)
+local tutorialCues = {}
+for index = 1, course:count() do
+	tutorialCues[index] = TutorialBot.cuesOf(tutorial:FindFirstChild(string.format("Level%02d", index)))
+end
 
 local params = RaycastParams.new()
 params.FilterDescendantsInstances = { template }
 local DT = 1 / 60
 local inner, outer = Config.BarInnerOffset, Config.BarOuterOffset
-local mode = ARGS.player or "lift"
+local mode = ARGS.player or "full"
 
 local launch = tutorial.StartIsland.LaunchPoint.CFrame
 local pos = launch.Position
@@ -41,21 +46,30 @@ local slots = {
 local checkpoint, t, result = 0, 0, "OK"
 local pending = {}
 local maxAbsBalance = 0
+local maxOff = {} -- mayor distancia lateral a la línea ideal en cada tramo
 local previous = pos
 
 while t < 200 do
 	t += DT
 	local level = math.clamp(checkpoint + 1, 1, course:count())
 	local forward = GliderPhysics.forwardOf(state.yaw)
-	-- Jugador: solo sustentación (como el piloto del FlightTester, con 0.4 s de reacción), en su lado.
-	if mode == "lift" then
-		local goal = course:lookahead(level, pos, 100)
-		local wantVy = 0
-		if goal then
-			local timeToGoal = math.max(((goal - pos) * Vector3.new(1, 0, 1)).Magnitude / Config.ForwardSpeed, 0.7)
-			wantVy = math.clamp((goal.Y - pos.Y) / timeToGoal, -Config.MaxFallSpeed, Config.MaxClimbSpeed)
+	-- Jugador (0.4 s de reacción), en su lado: su mitad de subir/bajar y, en "full", también de girar. En los
+	-- resbalones del bot, "full" mira cuánto se desvía el ala y compensa inclinándose (como una persona).
+	local cues = tutorialCues[level]
+	local goal = course:lookahead(level, pos, 100)
+	local progressNow = course:progress(level, pos)
+	if mode ~= "idle" then
+		local lift = TutorialBot.liftFor(pos, goal, state.speed)
+		local steerNeed = if mode == "full" then TutorialBot.steer(pos, forward, goal) else 0
+		local out = math.clamp(lift + steerNeed / 2, 0, 1)
+		if mode == "full" then
+			for _, cue in cues do
+				if cue.drift and progressNow >= cue.from and progressNow < cue.to then
+					-- Compensar el resbalón: además de su mitad, pone la mitad que el bot no pone.
+					out = math.clamp(lift + steerNeed, 0, 1)
+				end
+			end
 		end
-		local out = GliderPhysics.liftInputFor(GliderPhysics.liftFor(wantVy))
 		table.insert(pending, { at = t + 0.4, goal = -(inner + out * (outer - inner)) })
 		while #pending > 1 and pending[2].at <= t do
 			table.remove(pending, 1)
@@ -68,8 +82,13 @@ while t < 200 do
 	end
 	-- Bot.
 	local progress = course:progress(level, pos)
-	local balance = TutorialBot.steer(pos, forward, course:lookahead(level, pos, TutorialBot.LOOKAHEAD))
-	TutorialBot.step(slots, "Flying", {}, progress, balance)
+	local onLine = course:lookahead(level, pos, 0)
+	if onLine and progress > 0.02 and progress < 0.98 then -- solo dentro del corredor (no en el valle)
+		maxOff[level] = math.max(maxOff[level] or 0, ((pos - onLine) * Vector3.new(1, 0, 1)).Magnitude)
+	end
+	local botGoal = course:lookahead(level, pos, TutorialBot.LOOKAHEAD)
+	local balance = TutorialBot.steer(pos, forward, botGoal)
+	TutorialBot.step(slots, "Flying", cues, progress, balance, TutorialBot.liftFor(pos, botGoal, state.speed), t)
 	for _, slot in slots do
 		slot.velocity = GliderMath.approach(slot.velocity, slot.axis * Config.PlayerSlideSpeed, Config.PlayerSlideResponse, DT)
 		slot.position = math.clamp(slot.position + slot.velocity * DT, -outer, outer)
@@ -112,4 +131,8 @@ while t < 200 do
 	end
 	previous = pos
 end
-print(string.format("jugador=%s · %s · tramos superados %d · balance máx %.2f", mode, result, checkpoint, maxAbsBalance))
+local offs = {}
+for index = 1, course:count() do
+	table.insert(offs, string.format("%.0f", maxOff[index] or 0))
+end
+print(string.format("jugador=%s · %s · tramos superados %d · balance máx %.2f · desvío máx por tramo %s", mode, result, checkpoint, maxAbsBalance, table.concat(offs, "/")))
