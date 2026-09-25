@@ -716,6 +716,10 @@ InstanceMt.__newindex = function(inst, key, value)
 		rawset(inst, key, value)
 		return
 	end
+	if (key == "Color" or key == "BackgroundColor3" or key == "TextColor3") and typeof(value) ~= "Color3" and typeof(value) ~= "ColorSequence" then
+		-- Como Roblox: "Unable to assign property Color. Color3 expected, got nil".
+		error(string.format("Unable to assign property %s. Color3 expected, got %s (%s)", key, typeof(value), inst._name), 2)
+	end
 	if inst._destroyed and key == "Parent" then
 		error("no se puede cambiar Parent de una instancia destruida: " .. inst._name, 2)
 	end

@@ -2164,12 +2164,34 @@ end
 
 -- Genera Workspace.Map: el recorrido principal (50 niveles) y, dentro, Map.Tutorial.
 -- options.dress = false → blockout puro.
+local buildMap -- más abajo
+
+-- Construye el mapa sin tocar el viejo: el viejo solo se borra si el nuevo termina bien. Si algo falla, se
+-- deja el mapa anterior como estaba y se muestra el error.
 function MapBuilder.build(options): string
-	local dress = not (options and options.dress == false)
 	local old = workspace:FindFirstChild("Map")
+	if old then
+		old.Name = "MapOld"
+	end
+	local ok, result = pcall(buildMap, options)
+	if not ok then
+		local partial = workspace:FindFirstChild("Map")
+		if partial and partial ~= old then
+			partial:Destroy()
+		end
+		if old then
+			old.Name = "Map"
+		end
+		error("MapBuilder.build falló; se conserva el mapa anterior: " .. tostring(result), 0)
+	end
 	if old then
 		old:Destroy()
 	end
+	return result
+end
+
+function buildMap(options): string
+	local dress = not (options and options.dress == false)
 	local map = Instance.new("Folder")
 	map.Name = "Map"
 	map:SetAttribute("DevStartLevel", 0) -- 1-50 = despegar directamente en ese nivel (pruebas)

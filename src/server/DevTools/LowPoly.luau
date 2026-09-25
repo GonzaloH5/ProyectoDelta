@@ -52,6 +52,7 @@ function LowPoly.kit(options)
 	local colors, style, rng = options.colors, options.style or {}, options.rng
 	local attributes = options.attributes or {}
 	local kit = {}
+	local missing = {} -- tipos sin color ya avisados
 
 	-- shape: Enum.PartType (Ball, Cylinder…) o "Wedge" para una WedgePart (sube hacia su +Z local).
 	function kit.part(parent: Instance, name: string, kind: string, size: Vector3, cframe: CFrame, shape: any?)
@@ -61,7 +62,15 @@ function LowPoly.kit(options)
 		part.Anchored = true
 		part.Size = size
 		part.CFrame = cframe
-		part.Color = colors[kind]
+		local color = colors[kind]
+		if not color then
+			if not missing[kind] then
+				missing[kind] = true
+				warn("LowPoly: falta el color del tipo " .. kind .. " en la paleta (se usa gris)")
+			end
+			color = Color3.fromRGB(200, 200, 200)
+		end
+		part.Color = color
 		part.Material = if s.neon then Enum.Material.Neon else Enum.Material.SmoothPlastic
 		part.Transparency = s.transparency or 0
 		part.CastShadow = not s.noShadow

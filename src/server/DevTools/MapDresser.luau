@@ -74,6 +74,7 @@ local function palette(biome)
 		Crystal = biome.leaves[1],
 		CrystalTip = biome.blossoms[1],
 		Ember = biome.water,
+		WindVeil = rgb(235, 245, 255), -- windVisual lo retiñe según el tipo de viento
 	}
 end
 
