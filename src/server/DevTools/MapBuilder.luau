@@ -166,6 +166,21 @@ local function ring(parent, name, kind, cf: CFrame, w, h, bar, depth)
 	return model
 end
 
+-- Aro circular (visual): `segments` bloques rectos repartidos en círculo en el plano XY de cf (mira hacia -Z).
+-- Con 16 segmentos se lee redondo a la distancia de vuelo; cada bloque es un poco más largo para tapar juntas.
+local function circleRing(parent, name, kind, cf: CFrame, radius: number, thickness: number, segments: number?)
+	local count = segments or 16
+	local model = Instance.new("Model")
+	model.Name = name
+	local length = 2 * (radius + thickness / 2) * math.tan(math.pi / count) + 0.2
+	for k = 0, count - 1 do
+		local angle = 2 * math.pi * k / count
+		newPart(model, "Segment", kind, Vector3.new(length, thickness, thickness), cf * CFrame.Angles(0, 0, angle) * CFrame.new(0, radius, 0))
+	end
+	model.Parent = parent
+	return model
+end
+
 -- ── Trazado ("tortuga") ──────────────────────────────────────────────
 
 local function forwardOf(heading: number): Vector3
@@ -546,15 +561,20 @@ local function makeContext(level: Model, frames, marks, scale: number?)
 		ctx.point(s, (pass or 1) * (f.width / 2 - 26), -(f.height / 2 - 22))
 	end
 
-	-- ANILLO DE IMPULSO en (s, u, v): cruzarlo da energía y un empujón. Aro azul de size × size (visual) y un
-	-- marcador de plano en LevelNN.Rings (lo lee Checkpoints). Se ponen en líneas algo más arriesgadas.
+	-- ANILLO DE IMPULSO en (s, u, v): cruzarlo da energía y un empujón. Aro azul circular de diámetro size
+	-- (visual) y un marcador de plano con atributo Radius en LevelNN.Rings (lo lee Checkpoints). Se ponen en
+	-- líneas algo más arriesgadas.
 	local ringsFolder: Folder? = nil
 	function ctx.boostRing(s, u, v, size)
 		size = size or 46
 		ringsFolder = ringsFolder or newFolder(level, "Rings")
 		local cf = frameCFrame(at(s)) * CFrame.new(u, v, 0)
-		ring(guides, nextName("BoostRing"), "BoostRing", cf, size, size, 3, 3)
-		marker(ringsFolder :: Folder, nextName("RingPlane"), cf, Vector3.new(size + 6, size + 6, 4))
+		local hoop = circleRing(guides, nextName("BoostRing"), "BoostRing", cf, size / 2, 3)
+		-- Velo interior muy transparente: se lee el hueco por el que hay que pasar.
+		local veil = newPart(hoop, "Veil", "BoostRing", Vector3.new(0.4, size - 2, size - 2), cf * CFrame.Angles(0, math.pi / 2, 0), Enum.PartType.Cylinder)
+		veil.Transparency = 0.85
+		local plane = marker(ringsFolder :: Folder, nextName("RingPlane"), cf, Vector3.new(size + 6, size + 6, 4))
+		plane:SetAttribute("Radius", size / 2)
 	end
 
 	-- PLUMAS: n gemas recolectables de s0 a s1, de (u0, v0) a (u1, v1) (se recogen pasando a ≤ 12 studs).
@@ -901,7 +921,7 @@ local LEVELS = {
 			c.crosswind(a + 400, 250, -1, 9)
 			local b = c.mark("lomaViga")
 			c.ridge(b + 200, 10, 17, 25)
-			c.lintel(b + 600, 8, 45)
+			c.lintel(b + 600, 4, 50)
 		end,
 	},
 	{ -- 10: prueba del capítulo: tronco, viento lateral, salientes, corriente y viga.

@@ -265,7 +265,7 @@ dos desde la salida; las pruebas con `DevStartLevel` y los vuelos en solitario n
 - **Corrientes** (`ctx.updraft / downdraft / crosswind` en `MapBuilder`, zonas en `LevelNN.Wind`): la ascendente
   (turquesa) sube y permite pasar lomas más altas de lo que el ala sube sola; la descendente (violeta) hunde; el viento
   lateral (blanco) empuja hacia una pared. Las partículas muestran hacia dónde soplan.
-- **Anillos de impulso** (`ctx.boostRing`): cruzarlos da energía y un empujón corto; van en líneas algo arriesgadas.
+- **Anillos de impulso** (`ctx.boostRing`, aro azul circular): cruzarlos da energía y un empujón corto; van en líneas algo arriesgadas.
 - **Plumas** (`ctx.feathers`): gemas doradas en líneas ajustadas; se recogen pasando cerca. Contador en el HUD, en el
   checkpoint (★ con todas) y en los resultados; se guarda el mejor número por nivel (`PlayerStats.Feathers`).
 - **Obstáculos móviles** (`Movers.luau`): **troncos** que se balancean (por debajo siempre se pasa), **compuertas** que

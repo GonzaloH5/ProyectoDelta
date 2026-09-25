@@ -24,7 +24,7 @@ Checkpoints.__index = Checkpoints
 local LEVELS_PER_CHAPTER = 5 -- MapBuilder: 10 capítulos de 5 niveles, un bioma cada uno
 
 -- Por nivel: línea ideal (Entry → Route → Exit) con distancias acumuladas, título y color del bioma (HUD).
-export type Ring = { plane: CFrame, half: Vector3 }
+export type Ring = { plane: CFrame, half: Vector3, radius: number? }
 export type Feather = { id: number, position: Vector3, part: BasePart }
 type LevelInfo = {
 	points: { Vector3 },
@@ -113,7 +113,8 @@ function Checkpoints.new(map: Instance?): Course
 		if ringFolder then
 			for _, plane in ringFolder:GetChildren() do
 				if plane:IsA("BasePart") then
-					table.insert(levels[index].rings, { plane = plane.CFrame, half = plane.Size / 2 })
+					local radius = plane:GetAttribute("Radius")
+					table.insert(levels[index].rings, { plane = plane.CFrame, half = plane.Size / 2, radius = if type(radius) == "number" then radius else nil })
 				end
 			end
 		end
@@ -182,12 +183,18 @@ function Checkpoints.levelInfo(self: Course, index: number): (string, Color3?)
 	return info.title, info.color
 end
 
--- Cruce de un plano (-Z local = hacia adelante) entre from y to, dentro de su rectángulo.
-local function crossesPlane(plane: CFrame, half: Vector3, from: Vector3, to: Vector3): boolean
+local RING_TOLERANCE = 3 -- studs de más alrededor del aro que siguen contando como "pasar por dentro"
+
+-- Cruce de un plano (-Z local = hacia adelante) entre from y to: dentro del círculo de `radius` (anillos
+-- redondos) o, sin radio, dentro de su rectángulo.
+local function crossesPlane(plane: CFrame, half: Vector3, from: Vector3, to: Vector3, radius: number?): boolean
 	local a = plane:PointToObjectSpace(from)
 	local b = plane:PointToObjectSpace(to)
 	if a.Z > 0 and b.Z <= 0 then
 		local hit = a:Lerp(b, a.Z / (a.Z - b.Z))
+		if radius then
+			return math.sqrt(hit.X * hit.X + hit.Y * hit.Y) <= radius + RING_TOLERANCE
+		end
 		return math.abs(hit.X) <= half.X and math.abs(hit.Y) <= half.Y
 	end
 	return false
@@ -199,7 +206,7 @@ function Checkpoints.ringsCrossed(self: Course, index: number, from: Vector3, to
 	local info = self.levels[index]
 	if info then
 		for i, ring in info.rings do
-			if crossesPlane(ring.plane, ring.half, from, to) then
+			if crossesPlane(ring.plane, ring.half, from, to, ring.radius) then
 				table.insert(crossed, i)
 			end
 		end
