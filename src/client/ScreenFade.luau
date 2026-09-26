@@ -3,6 +3,7 @@
 --   · al perder el ala: oscurece durante la voltereta y aclara al reaparecer (no se ve el salto de cámara)
 --   · Respawn con el botón: fundido corto desde negro
 --   · al empezar a volar desde el lobby: aparece desde negro
+--   · al pasar de Flight School al nivel 1 (el ala salta a la salida del recorrido): desde negro
 -- Lee los atributos del ala montada (State, Respawns).
 
 local Players = game:GetService("Players")
@@ -26,6 +27,7 @@ gui.Parent = (Players.LocalPlayer :: Player):WaitForChild("PlayerGui")
 local current: Model? = nil
 local lastState: string? = nil
 local lastRespawns = 0
+local lastTutorial = false
 
 local function fadeTo(transparency: number, seconds: number)
 	TweenService:Create(cover, TweenInfo.new(seconds, Enum.EasingStyle.Quad), { BackgroundTransparency = transparency }):Play()
@@ -43,6 +45,7 @@ function ScreenFade.update(glider: Model?)
 		if glider then
 			local respawns = glider:GetAttribute("Respawns")
 			lastRespawns = if type(respawns) == "number" then respawns else 0
+			lastTutorial = glider:GetAttribute("Tutorial") == true
 			lastState = nil
 			fromBlack(0.8) -- empieza el vuelo
 		else
@@ -57,10 +60,17 @@ function ScreenFade.update(glider: Model?)
 		fadeTo(0, 0.5) -- el ala se pierde: se oscurece durante la voltereta
 	end
 	lastState = if type(state) == "string" then state else nil
+	local tutorial = glider:GetAttribute("Tutorial") == true
+	if lastTutorial and not tutorial then
+		fromBlack(0.9) -- Flight School → nivel 1
+	end
+	lastTutorial = tutorial
 	local respawns = glider:GetAttribute("Respawns")
-	if type(respawns) == "number" and respawns > lastRespawns then
+	if type(respawns) == "number" then
+		if respawns > lastRespawns then
+			fromBlack(0.45)
+		end
 		lastRespawns = respawns
-		fromBlack(0.45)
 	end
 end
 

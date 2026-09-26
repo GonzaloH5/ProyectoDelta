@@ -136,4 +136,12 @@ function InputAxis.setEnabled(enabled: boolean)
 	end
 end
 
+-- Botón de impulso visible solo cuando el impulso está disponible (desde el nivel 6; en Flight School no).
+function InputAxis.setPumpVisible(visible: boolean)
+	pumpButton.Visible = visible
+	if not visible then
+		touch.pump = false
+	end
+end
+
 return InputAxis

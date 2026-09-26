@@ -52,7 +52,7 @@ export type Sense = {
 }
 
 -- Eventos de daño que devuelve fly(): "scrape" (roce), "impact" (golpe: −1 corazón), "crash" (sin corazones).
-export type Event = "scrape" | "impact" | "crash"
+export type Event = "scrape" | "impact" | "crash" | "bonk" -- bonk = golpe fuerte en modo práctica (no quita corazones)
 
 export type FlyResult = {
 	velocity: Vector3,
@@ -344,8 +344,9 @@ end
 
 -- Un paso completo: percibir, volar, resolver contactos y daño. Devuelve la velocidad a aplicar y lo ocurrido.
 -- options.now = reloj (s) · assistTurn · landing · windVertical (viento suave de la sesión, studs/s) ·
--- wind (corriente del mapa: GliderPhysics.windAt; la vertical respeta techo y suelo, la horizontal empuja).
-function GliderPhysics.fly(state: State, health: Health, liftInput: number, balanceInput: number, position: Vector3, dims: Dimensions, dt: number, params: RaycastParams, options: { now: number, assistTurn: number?, landing: boolean?, windVertical: number?, wind: Vector3? }): FlyResult
+-- wind (corriente del mapa: GliderPhysics.windAt; la vertical respeta techo y suelo, la horizontal empuja) ·
+-- practice (tutorial: tocar nunca quita corazones; un golpe fuerte es un "bonk", solo efecto).
+function GliderPhysics.fly(state: State, health: Health, liftInput: number, balanceInput: number, position: Vector3, dims: Dimensions, dt: number, params: RaycastParams, options: { now: number, assistTurn: number?, landing: boolean?, windVertical: number?, wind: Vector3?, practice: boolean? }): FlyResult
 	local sense = GliderPhysics.sense(state, position, GliderPhysics.velocity(state), dims, dt, params, options.landing)
 	local result: FlyResult = { velocity = Vector3.zero, event = nil, contact = nil, landed = false, skimming = false }
 	if options.landing and sense.floorGap and sense.floorGap <= Config.GroundClearance then
@@ -355,7 +356,11 @@ function GliderPhysics.fly(state: State, health: Health, liftInput: number, bala
 	GliderPhysics.step(state, liftInput, balanceInput, dt, sense.maxVertical, sense.minVertical, options.assistTurn or 0)
 	if sense.contact then
 		local into = GliderPhysics.contact(state, sense.contact.Normal)
-		result.event = GliderPhysics.hurt(health, into, dt, options.now, sense.harmless)
+		if options.practice then
+			result.event = if into >= Config.ImpactSpeed and not sense.harmless then "bonk" elseif into > 0 then "scrape" else nil
+		else
+			result.event = GliderPhysics.hurt(health, into, dt, options.now, sense.harmless)
+		end
 		result.contact = sense.contact
 	else
 		GliderPhysics.calm(health, dt, options.now)

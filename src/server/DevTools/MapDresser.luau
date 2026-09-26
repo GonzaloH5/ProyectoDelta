@@ -378,6 +378,36 @@ local function obstacle(ctx, parent, part: BasePart)
 			end
 		end)
 		kit.part(parent, "HazardEdge", "Hazard", Vector3.new(size.X, 1.5, 1.5), part.CFrame * CFrame.new(0, -size.Y / 2, size.Z / 2 + bottomOut))
+	elseif part.Name:find("^Barrier") then
+		-- Muro: espejo de la viga; la línea marca el borde superior de la cara por la que llega el ala (+Z).
+		local topOut = 0
+		obstacleBands(ctx, parent, part, 0, 1, function(_, y1, out)
+			if y1 >= size.Y / 2 - 0.01 then
+				topOut = out
+			end
+		end)
+		kit.part(parent, "HazardEdge", "Hazard", Vector3.new(size.X, 1.5, 1.5), part.CFrame * CFrame.new(0, size.Y / 2, size.Z / 2 + topOut))
+	elseif part.Name:find("^Window") then
+		-- Ventana: estratos solo a lo largo del recorrido (el hueco no se estrecha) y línea de peligro alrededor del hueco.
+		local faceOut = 0
+		obstacleBands(ctx, parent, part, 0, 1, function(_, _, out)
+			faceOut = math.max(faceOut, out)
+		end)
+		local z = size.Z / 2 + faceOut
+		local edge = part:GetAttribute("Edge")
+		if edge == "Top" or edge == "Bottom" then
+			local y = if edge == "Top" then -size.Y / 2 else size.Y / 2
+			kit.part(parent, "HazardEdge", "Hazard", Vector3.new(size.X, 1.5, 1.5), part.CFrame * CFrame.new(0, y, z))
+		elseif edge == "Left" or edge == "Right" then
+			local spanY = part:GetAttribute("EdgeSpan")
+			if typeof(spanY) == "Vector2" then
+				local x = if edge == "Left" then size.X / 2 else -size.X / 2
+				kit.part(parent, "HazardEdge", "Hazard", Vector3.new(1.5, spanY.Y - spanY.X, 1.5), part.CFrame * CFrame.new(x, (spanY.X + spanY.Y) / 2, z))
+			end
+		end
+	elseif part.Name:find("^Divider") then
+		-- Divisor de una bifurcación: estratos que crecen poco hacia los carriles (≤ 2 studs por lado).
+		obstacleBands(ctx, parent, part, 0.5, 0)
 	elseif part.Name:find("^Promontory") then
 		-- Saliente: prisma girado 45°; la arista que apunta al centro del corredor lleva la línea de peligro.
 		-- Al engrosar las caras la arista avanza √2 veces más: se engrosa al 70 % para que avance ≤ 3 studs.

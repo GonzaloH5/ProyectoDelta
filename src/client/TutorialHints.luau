@@ -1,9 +1,10 @@
 --!strict
--- Tutorial en el cliente:
---   · offer(): ventana "¿Quieres jugar el tutorial?" (solo la primera vez que entras; el servidor decide cuándo).
---     PLAY / NO THANKS → "TutorialAnswer" al servidor. Acepte o rechace, no vuelve a salir.
---   · update(glider): mientras vas en un ala de tutorial (atributo Tutorial), indicación grande arriba al centro
---     (atributo TutorialHint, lo pone TutorialBot en el servidor) y botón SKIP TUTORIAL.
+-- Flight School (tutorial) en el cliente:
+--   · offer(): la primera vez que entras, mientras buscas pareja: "¿practicar con el Coach?" (PRACTICE / NO
+--     THANKS → "TutorialAnswer"). Con un compañero de verdad, Flight School empieza sola al despegar.
+--   · update(glider): mientras vas en un ala de Flight School (atributo Tutorial), indicación grande (una o dos
+--     palabras, atributo TutorialHint), "BONK!" al chocar (modo práctica: no quita corazones), "NICE!" al pasar al
+--     tramo siguiente y botón SKIP (en dúo hace falta que lo pulsen los dos: atributo SkipVotes).
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -76,7 +77,33 @@ caption.AnchorPoint = Vector2.new(0.5, 0)
 caption.Position = UDim2.new(0.5, 0, 0, 86)
 caption.Size = UDim2.fromOffset(400, 20)
 caption.TextColor3 = Color3.fromRGB(255, 205, 50)
-caption.Text = "TUTORIAL · your partner is a bot"
+
+-- "BONK!" / "NICE!": reacción grande y corta en el centro.
+local reaction = text(gui, Enum.Font.GothamBlack, 64)
+reaction.AnchorPoint = Vector2.new(0.5, 0.5)
+reaction.Position = UDim2.fromScale(0.5, 0.36)
+reaction.Size = UDim2.fromOffset(500, 80)
+local reactionStroke = Instance.new("UIStroke")
+reactionStroke.Thickness = 4
+reactionStroke.Transparency = 0.1
+reactionStroke.Parent = reaction
+local reactionScale = Instance.new("UIScale")
+reactionScale.Parent = reaction
+local BONKS = { "BONK!", "OOPS!", "OUCH!", "BONK!" }
+local reactionToken = 0
+local function react(word: string, color: Color3)
+	reactionToken += 1
+	local mine = reactionToken
+	reaction.Text = word
+	reaction.TextColor3 = color
+	reactionScale.Scale = 1.6
+	TweenService:Create(reactionScale, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+	task.delay(0.9, function()
+		if reactionToken == mine then
+			reaction.Text = ""
+		end
+	end)
+end
 
 local skip = button(gui, "SKIP TUTORIAL", GREY)
 skip.AnchorPoint = Vector2.new(0.5, 0)
@@ -90,19 +117,38 @@ end)
 gui.Parent = playerGui
 
 local lastHint = ""
+local lastBonks = 0
+local lastBonkClock = -math.huge
 
 function TutorialHints.update(glider: Model?)
 	local active = glider ~= nil and glider:GetAttribute("Tutorial") == true
 	gui.Enabled = active
 	if not (active and glider) then
 		lastHint = ""
+		lastBonks = 0
 		return
+	end
+	local duo = glider:GetAttribute("TutorialDuo") == true
+	caption.Text = if duo then "FLIGHT SCHOOL · learn it together" else "PRACTICE · your partner is the Coach"
+	local votes = glider:GetAttribute("SkipVotes")
+	skip.Text = if duo and type(votes) == "number" and votes > 0 then string.format("SKIP (%d/2)", votes) else "SKIP TUTORIAL"
+	-- Golpes en modo práctica: no cuestan nada, solo se ríe uno.
+	local bonks = glider:GetAttribute("Bonks")
+	if type(bonks) == "number" and bonks > lastBonks then
+		lastBonks = bonks
+		lastBonkClock = os.clock()
+		react(BONKS[bonks % #BONKS + 1], Color3.fromRGB(255, 120, 90))
 	end
 	local value = glider:GetAttribute("TutorialHint")
 	local current = if type(value) == "string" then value else ""
 	if current ~= lastHint then
+		-- Paso al tramo siguiente sin chocar en el último momento: "NICE!".
+		if lastHint ~= "" and #lastHint <= 14 and os.clock() - lastBonkClock > 1.5 then
+			react("NICE!", Color3.fromRGB(80, 220, 110))
+		end
 		lastHint = current
 		hint.Text = current
+		hint.TextSize = if #current <= 14 then 56 else 30 -- una palabra, bien grande
 		hintScale.Scale = 1.25
 		TweenService:Create(hintScale, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
 	end
@@ -136,14 +182,14 @@ function TutorialHints.offer()
 	local title = text(panel, Enum.Font.GothamBlack, 34)
 	title.Position = UDim2.fromOffset(20, 22)
 	title.Size = UDim2.new(1, -40, 0, 44)
-	title.Text = "First time flying?"
+	title.Text = "Waiting for a wingmate?"
 	local body = text(panel, Enum.Font.GothamMedium, 19)
 	body.Position = UDim2.fromOffset(30, 76)
 	body.Size = UDim2.new(1, -60, 0, 80)
 	body.TextColor3 = Color3.fromRGB(215, 222, 235)
-	body.Text = "Learn to climb, dive and turn in a short tutorial.\nA bot will fly with you as your partner."
+	body.Text = "Practice in Flight School (40 s) with the Coach.\nWith a real partner, Flight School starts by itself."
 
-	local play = button(panel, "PLAY TUTORIAL", GREEN)
+	local play = button(panel, "PRACTICE", GREEN)
 	play.AnchorPoint = Vector2.new(1, 1)
 	play.Position = UDim2.new(0.5, -8, 1, -24)
 	play.Size = UDim2.fromOffset(210, 54)

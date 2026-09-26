@@ -62,7 +62,8 @@ end
 -- Opcionales: mode ("strict" | "game"), jitter = error de cada jugador al elegir su sitio (studs, aleatorio),
 -- reactions = { a, b } (cada jugador con su retraso), seed, stopOnLoss (false = reaparece y sigue),
 -- pump (modo juego: los dos se balancean en las rectas mientras quede energía, como un dúo con prisa),
--- timeOffset (s: desfase del reloj de los obstáculos móviles; checkRules prueba varios).
+-- timeOffset (s: desfase del reloj de los obstáculos móviles; checkRules prueba varios),
+-- inputs (función (t, lift, balance, posIzq, posDer) en cada paso: la usa el medidor de ritmo).
 FlightTester.FULL = { name = "completo", maxTurn = 1, maxLift = 1, lookahead = 100, reaction = 0.3, deadband = 0.15 }
 FlightTester.CALM = { name = "tranquilo", maxTurn = 0.62, maxLift = 0.68, lookahead = 130, reaction = 0.3, deadband = 0.15 }
 -- Novato: reacciona tarde, se coloca "más o menos" y mira menos adelante (va corrigiendo a toques).
@@ -244,6 +245,9 @@ function FlightTester.run(levelIndex: number, routeName: string?, pilot, root: I
 
 		-- ── Mismo cálculo que GliderSession._computeInputs ──
 		local liftInput, balanceInput = GliderPhysics.inputs(players[1].position, players[2].position)
+		if pilot.inputs then
+			pilot.inputs(t, liftInput, balanceInput, players[1].position, players[2].position) -- ritmo (tools/sim/drivers/pacing)
+		end
 		maxBalance = math.max(maxBalance, math.abs(balanceInput))
 		minLift, maxLift = math.min(minLift, liftInput), math.max(maxLift, liftInput)
 
@@ -296,9 +300,19 @@ function FlightTester.run(levelIndex: number, routeName: string?, pilot, root: I
 			end
 			sinceSafe += DT
 			if sinceSafe >= Config.SafePointInterval and clean >= Config.SafePointCleanTime then
-				sinceSafe = 0
+				-- Como GliderController.trySafePoint: solo si está despejado SafePointLookahead studs por delante.
 				local look = flat(ahead(path, segment, pos, 80) - pos)
-				safe = { pos = pos, yaw = if look.Magnitude > 1 then GliderMath.yawOf(look.Unit) else state.yaw, segment = segment }
+				local yaw = if look.Magnitude > 1 then GliderMath.yawOf(look.Unit) else state.yaw
+				local margin, reach = Config.SafePointMargin, Config.SafePointLookahead
+				local spawnCFrame = CFrame.new(pos) * CFrame.Angles(0, yaw, 0)
+				probe.Size = Vector3.new(span + 2 * margin, wingTop + Config.FeetBelowRoot + 2 * margin, reach + 2 * margin)
+				probe.CFrame = spawnCFrame * CFrame.new(0, (wingTop - Config.FeetBelowRoot) / 2, -reach / 2)
+				if #workspace:GetPartsInPart(probe, overlap) == 0 then
+					sinceSafe = 0
+					safe = { pos = pos, yaw = yaw, segment = segment }
+				else
+					sinceSafe = Config.SafePointInterval - 1 -- se vuelve a intentar en 1 s
+				end
 			end
 			velocity = flown.velocity
 		else
@@ -393,20 +407,25 @@ end
 -- Cada tramo de niveles exige que ciertos pilotos lleguen a la salida:
 --   · { piloto estricto, margen }: el ala inflada `margen` studs por cada lado no toca nada (el techo no cuenta).
 --   · { piloto de juego, golpes }: llega sin perder el ala y con como mucho esos golpes (corazones perdidos).
---   1-10  (capítulos 1-2, aprender): el novato llega en el juego sin golpes · el tranquilo pasa con ≥ 8
+--   1-10  (capítulos 1-2, aprender): el completo pasa con ≥ 8 (justo: quien lo hace bien va holgado) y el novato
+--         llega en el juego con ≤ 1 golpe (puede equivocarse alguna vez, pero no pierde el ala). Se permite pedir
+--         maniobras a tope (girar fuerte, subir y bajar seguidos): es lo que hace falta para coordinarse.
 --   11-25 (capítulos 3-5, practicar): el novato llega en el juego (≤ 1 golpe: hay 2 corazones) · el tranquilo pasa con ≥ 4
 --   26-50 (capítulos 6-10, dominar): el completo pasa con ≥ 4 y el tranquilo llega en el juego sin golpes
 --         (en la regla estricta el tranquilo puede fallar: exige maniobras fuertes, pero se pueden hacer)
 -- Reglas de diseño que el piloto no mide: ≥ 2 s de vuelo (120 studs) entre dos obstáculos; como mucho una
--- idea nueva por nivel; el último nivel de cada capítulo combina las ideas del capítulo.
+-- idea nueva por nivel; el último nivel de cada capítulo combina las ideas del capítulo. El ritmo (algo que hacer
+-- cada 2,5-5 s, nunca > 5 s sin nada en los capítulos 1-2) lo mide tools/sim/drivers/pacing.luau.
+-- Bifurcaciones: si el nivel tiene RouteB (el otro carril), cada piloto vuela los dos carriles.
 FlightTester.RULES = {
-	{ upTo = 10, checks = { { FlightTester.NOVICE_GAME, 0 }, { FlightTester.CALM, 8 } } },
+	{ upTo = 10, checks = { { FlightTester.FULL, 8 }, { FlightTester.NOVICE_GAME, 1 } } },
 	{ upTo = 25, checks = { { FlightTester.NOVICE_GAME, 1 }, { FlightTester.CALM, 4 } } },
 	{ upTo = 50, checks = { { FlightTester.FULL, 4 }, { FlightTester.CALM_GAME, 0 } } },
 }
 
--- Tutorial (Map.Tutorial): es la primera vez que se vuela, así que el novato y el tranquilo pasan con ≥ 8.
-FlightTester.TUTORIAL_RULE = { upTo = math.huge, checks = { { FlightTester.NOVICE, 8 }, { FlightTester.CALM, 8 } } }
+-- Tutorial (Map.Tutorial, Flight School): es la primera vez que se vuela; el novato llega en el juego sin golpes
+-- y el tranquilo pasa con ≥ 8.
+FlightTester.TUTORIAL_RULE = { upTo = math.huge, checks = { { FlightTester.NOVICE_GAME, 0 }, { FlightTester.CALM, 8 } } }
 
 local MOVER_OFFSETS = { 0, 0.9, 1.8, 2.7 }
 
@@ -425,13 +444,21 @@ local function check(map: Instance?, from: number?, to: number?, fixedTier): str
 		-- (ningún móvil mata sin remedio: siempre hay un paso abierto).
 		local level = map:FindFirstChild(string.format("Level%02d", index)) :: Instance
 		local offsets = if level:FindFirstChild("Movers") then MOVER_OFFSETS else { 0 }
+		local routes = if level:FindFirstChild("RouteB") then { "Route", "RouteB" } else { "Route" }
+		local runs = {}
+		for _, routeName in routes do
+			for _, offset in offsets do
+				table.insert(runs, { route = routeName, offset = offset })
+			end
+		end
 		for _, check in tier.checks do
 			local pilot, required = check[1], check[2]
 			local line, pass, need
-			for _, offset in offsets do
+			for _, run in runs do
+				local offset = run.offset
 				local flown = table.clone(pilot)
 				flown.timeOffset = offset
-				local offsetLine, info = FlightTester.run(index, nil, flown, map)
+				local offsetLine, info = FlightTester.run(index, if run.route == "Route" then nil else run.route, flown, map)
 				local ok
 				if pilot.mode == "game" then
 					ok = info.ok and info.hits <= required

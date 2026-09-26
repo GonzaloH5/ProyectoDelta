@@ -38,6 +38,10 @@ local GliderConfig = {
 	CrashPauseTime = 0.6, -- segundos de caída (voltereta) tras perder el ala antes de reaparecer
 	LandingTime = 2.5, -- segundos que el ala se desliza sobre la isla de meta antes de volver al lobby
 	FinishLandTimeout = 12, -- s de vuelo tras la meta sin aterrizar: se vuelve al lobby igualmente
+	FlightSchoolCountdown = 3, -- s de cuenta atrás al pasar de Flight School al nivel 1 (carga la zona)
+	PracticeStuckTime = 2, -- s atascados (el ala casi parada) en Flight School antes de que ayude el viento a favor
+	PracticeAssistVertical = 20, -- studs/s de ayuda vertical hacia la línea ideal de ese viento a favor
+	PumpFromLevel = 6, -- el impulso (Espacio) se presenta en este nivel; antes solo cuenta la barra
 	ResetCooldown = 1, -- segundos mínimos entre dos pulsaciones del botón Respawn (de cualquier jugador)
 	ShowDebug = false, -- true = muestra valores de Lift/Balance/velocidad en pantalla
 
@@ -137,6 +141,8 @@ local GliderConfig = {
 	SafePointInterval = 8, -- cada cuántos segundos de vuelo se guarda un punto seguro
 	SafePointCleanTime = 3, -- segundos sin tocar nada necesarios para guardarlo
 	SafePointMargin = 10, -- studs libres alrededor del ala para que el punto sea seguro
+	SafePointLookahead = 160, -- studs despejados por delante: no se guarda justo antes de un obstáculo (reaparecer
+	-- ahí no daría tiempo a esquivarlo y se entraría en bucle)
 
 	-- ── Asistencia (el servidor ayuda a seguir la línea ideal) ─────────
 	-- Solo actúa cuando nadie gira fuerte: se suma al giro de los jugadores, nunca lo anula.

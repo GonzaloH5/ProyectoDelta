@@ -1,6 +1,10 @@
 --!strict
--- Compañero bot del tutorial: un personaje R15 colgado del ala como un jugador más (GliderSession.addBot) y
--- movido por el servidor en cada paso.
+-- Flight School (tutorial): indicaciones, marcas fantasma y el Coach.
+--   · Indicaciones (atributo "Coach" del nivel, MapBuilder TUTORIAL_LEVELS.coach): una o dos palabras por tramo;
+--     acción 1 = marcas fantasma en la barra del HUD (dónde ponerse cada uno para seguir la línea ideal).
+--     Sirven igual para el dúo (dos jugadores, sin bot) que para quien practica solo con el Coach.
+--   · Coach: compañero bot, un personaje R15 colgado del ala como un jugador más (GliderSession.addBot) y
+--     movido por el servidor en cada paso (solo en la práctica en solitario).
 --
 -- El bot hace SOLO SU MITAD, como un compañero real: calcula lo que haría falta para seguir la línea ideal
 -- (subida por la altura del punto de mira, giro por persecución pura) y se coloca donde le tocaría a él si el
@@ -31,7 +35,7 @@ local COUNTDOWN_HINT = "Slide along the bar with A / D (or the ◀ ▶ buttons)"
 local LAND_HINT = "Great! Both to the CENTER to glide down and land on the island"
 local LAND_LIFT = 0.15 -- tras la meta el bot va hacia el centro (bajar suave) para aterrizar
 
-export type Cue = { from: number, to: number, hint: string, pump: boolean, drift: boolean }
+export type Cue = { from: number, to: number, hint: string, pump: boolean, drift: boolean, ghost: boolean }
 
 -- Personaje del bot (sin avatar de ningún usuario: descripción por defecto con colores propios).
 function TutorialBot.create(): Model?
@@ -60,8 +64,8 @@ function TutorialBot.create(): Model?
 	return character
 end
 
--- Indicaciones de un nivel del tutorial (atributo "Coach": "desde|hasta|acción|texto;…"; acción 2 = el bot se
--- balancea (impulso) durante esa indicación · acción 3 = el bot resbala: el jugador tiene que compensarlo).
+-- Indicaciones de un nivel del tutorial (atributo "Coach": "desde|hasta|acción|texto;…"; acción 1 = marcas
+-- fantasma · 2 = el bot se balancea (impulso) · 3 = el bot resbala: el jugador tiene que compensarlo).
 function TutorialBot.cuesOf(level: Instance?): { Cue }
 	local cues: { Cue } = {}
 	local raw = level and level:GetAttribute("Coach")
@@ -71,7 +75,8 @@ function TutorialBot.cuesOf(level: Instance?): { Cue }
 	for _, item in string.split(raw, ";") do
 		local from, to, action, hint = string.match(item, "^([^|]+)|([^|]+)|([^|]+)|(.*)$")
 		if from and to and hint then
-			table.insert(cues, { from = tonumber(from) or 0, to = tonumber(to) or 1, hint = hint, pump = tonumber(action) == 2, drift = tonumber(action) == 3 })
+			local code = tonumber(action)
+			table.insert(cues, { from = tonumber(from) or 0, to = tonumber(to) or 1, hint = hint, pump = code == 2, drift = code == 3, ghost = code == 1 })
 		end
 	end
 	return cues
@@ -103,44 +108,62 @@ function TutorialBot.targetFor(lift: number, balance: number): number
 	return TutorialBot.SIDE * (inner + ob * (outer - inner))
 end
 
--- Un paso del bot. slots = huecos de la sesión (bot en SIDE, jugador en -SIDE); balance / lift = lo que hace
--- falta entre los dos (TutorialBot.steer / liftFor; neutro en la cuenta atrás); progress = fracción recorrida del
--- nivel; now = reloj de la sesión (resbalones). Devuelve el texto de la indicación actual.
--- completed = ya cruzaron la meta: el bot baja a aterrizar (sin eso mantendría la altura y el vuelo no acabaría).
-function TutorialBot.step(slots: { [number]: any }, state: string, cues: { Cue }, progress: number, balance: number, lift: number?, now: number?, completed: boolean?): string
-	local bot = slots[TutorialBot.SIDE]
-	if not (bot and bot.rig) then
-		return ""
+-- Indicación activa en `progress` (fracción recorrida del nivel); solo en vuelo.
+function TutorialBot.activeCue(cues: { Cue }, state: string, progress: number): Cue?
+	if state ~= "Flying" then
+		return nil
 	end
-	if completed then
-		local target = TutorialBot.targetFor(LAND_LIFT, 0)
-		local delta = target - bot.position
-		bot.axis = if math.abs(delta) > DEADBAND then math.sign(delta) else 0
-		bot.pumping = false
-		return if state == "Flying" then LAND_HINT else ""
-	end
-	local active: Cue? = nil
-	if state == "Flying" then
-		for _, cue in cues do
-			if progress >= cue.from and progress < cue.to then
-				active = cue
-				break
-			end
+	for _, cue in cues do
+		if progress >= cue.from and progress < cue.to then
+			return cue
 		end
 	end
-	local steerShare = math.clamp(balance, -MAX_STEER, MAX_STEER)
-	if active and active.drift then
-		-- Resbalón: se inclina solo hacia un lado y otro y apenas corrige; el ala se desvía si el jugador no compensa.
-		steerShare = balance * DRIFT_SELF_CORRECTION + DRIFT * math.sin((now or 0) * DRIFT_RATE)
+	return nil
+end
+
+-- Texto de la pantalla: la indicación activa, cómo moverse en la cuenta atrás o aterrizar tras la meta.
+function TutorialBot.hintFor(cue: Cue?, state: string, completed: boolean?): string
+	if completed then
+		return if state == "Flying" then LAND_HINT else ""
 	end
-	local target = TutorialBot.targetFor(lift or Config.NeutralLiftPoint, steerShare)
-	local delta = target - bot.position
-	bot.axis = if math.abs(delta) > DEADBAND then math.sign(delta) else 0
-	bot.pumping = active ~= nil and active.pump
 	if state == "Countdown" then
 		return COUNTDOWN_HINT
 	end
-	return if active then active.hint else ""
+	return if cue then cue.hint else ""
+end
+
+-- Marcas fantasma: dónde tendría que estar cada uno (studs desde el centro de la barra, izquierda negativa) para
+-- dar entre los dos el LiftInput y el BalanceInput que hacen falta. Izquierda oa = lift + balance/2 · derecha
+-- ob = lift − balance/2 (ver targetFor).
+function TutorialBot.ghosts(lift: number, balance: number): (number, number)
+	local inner, outer = Config.BarInnerOffset, Config.BarOuterOffset
+	local oa = math.clamp(lift + balance / 2, 0, 1)
+	local ob = math.clamp(lift - balance / 2, 0, 1)
+	return -(inner + oa * (outer - inner)), inner + ob * (outer - inner)
+end
+
+-- Un paso del Coach. slots = huecos de la sesión (bot en SIDE, jugador en -SIDE); cue = indicación activa;
+-- balance / lift = lo que hace falta entre los dos (TutorialBot.steer / liftFor; neutro en la cuenta atrás);
+-- now = reloj de la sesión (resbalones); completed = ya cruzaron la meta: baja a aterrizar.
+function TutorialBot.step(slots: { [number]: any }, cue: Cue?, balance: number, lift: number?, now: number?, completed: boolean?)
+	local bot = slots[TutorialBot.SIDE]
+	if not (bot and bot.rig) then
+		return
+	end
+	local target
+	if completed then
+		target = TutorialBot.targetFor(LAND_LIFT, 0)
+	else
+		local steerShare = math.clamp(balance, -MAX_STEER, MAX_STEER)
+		if cue and cue.drift then
+			-- Resbalón: se inclina solo hacia un lado y otro y apenas corrige; el ala se desvía si el jugador no compensa.
+			steerShare = balance * DRIFT_SELF_CORRECTION + DRIFT * math.sin((now or 0) * DRIFT_RATE)
+		end
+		target = TutorialBot.targetFor(lift or Config.NeutralLiftPoint, steerShare)
+	end
+	local delta = target - bot.position
+	bot.axis = if math.abs(delta) > DEADBAND then math.sign(delta) else 0
+	bot.pumping = not completed and cue ~= nil and cue.pump
 end
 
 return TutorialBot

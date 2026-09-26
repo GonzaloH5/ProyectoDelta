@@ -166,7 +166,9 @@ RunService:BindToRenderStep("GliderClient", Enum.RenderPriority.Camera.Value + 1
 			sentAxis = axis
 			remote:FireServer("Axis", axis)
 		end
-		local pump = InputAxis.pump()
+		local pumpEnabled = mountedGlider:GetAttribute("PumpEnabled") ~= false
+		InputAxis.setPumpVisible(pumpEnabled)
+		local pump = pumpEnabled and InputAxis.pump()
 		if pump ~= sentPump then
 			sentPump = pump
 			remote:FireServer("Pump", pump)

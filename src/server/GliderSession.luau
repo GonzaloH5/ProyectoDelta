@@ -77,6 +77,11 @@ export type Session = typeof(setmetatable(
 		rings: number, -- anillos cruzados (contador publicado: efecto en el cliente)
 		windField: Vector3?, -- corriente del mapa en la posición del ala (la pone el controlador)
 		impacts: number, -- golpes (contador publicado: efectos en el cliente)
+		practice: boolean, -- modo práctica (Flight School): tocar no quita corazones; golpe fuerte = "bonk"
+		bonks: number, -- golpes en modo práctica (contador publicado: "BONK!" en el cliente)
+		lastBonk: number,
+		stuckTime: number, -- s seguidos tocando algo en modo práctica (atasco → viento a favor)
+		pumpEnabled: boolean, -- el impulso (Espacio) está disponible (desde Config.PumpFromLevel)
 		respawns: number, -- reapariciones (contador publicado)
 		crashFrom: CFrame?, -- dónde se perdió el ala (voltereta)
 		lastReset: number,
@@ -317,6 +322,11 @@ function GliderSession.new(
 		rings = 0,
 		windField = nil,
 		impacts = 0,
+		practice = false,
+		bonks = 0,
+		lastBonk = -math.huge,
+		stuckTime = 0,
+		pumpEnabled = true,
 		respawns = 0,
 		crashFrom = nil,
 		lastReset = -math.huge,
@@ -484,7 +494,7 @@ function GliderSession.handleMessage(self: Session, player: Player, kind: unknow
 	end
 
 	if kind == "Pump" then
-		slot.pumping = value == true
+		slot.pumping = value == true and self.pumpEnabled
 	elseif kind == "Axis" then
 		if type(value) ~= "number" or value ~= value then
 			return -- tipo inválido o NaN
@@ -597,6 +607,50 @@ function GliderSession.respawn(self: Session, lostWing: boolean?)
 	self.flight.scraping = false
 	self.flight.skimming = false
 	self:_setState("Countdown")
+end
+
+-- Cambio de recorrido sin volver al lobby (Flight School → nivel 1): el ala aparece en `spawn` con una cuenta
+-- atrás de `countdown` s y todo vuelve a empezar (cronómetro, checkpoints, contadores; sin modo práctica).
+function GliderSession.relocate(self: Session, spawn: CFrame, countdown: number)
+	self.respawnCFrame = spawn
+	self.safeCFrame = spawn
+	local forward = spawn.LookVector * Vector3.new(1, 0, 1)
+	self.respawnForward = if forward.Magnitude > 1e-3 then forward.Unit else self.respawnForward
+	self.checkpoint = 0
+	self.completed = false
+	self.afterFinish = 0
+	self.runTime = 0
+	self.timing = false
+	self.levelHits = 0
+	self.levelLosses = 0
+	self.practice = false
+	self.stuckTime = 0
+	self:_setWindAssist(false)
+	self:respawn(false)
+	self.flight.countdown = countdown
+	self.respawns = 0
+	self.impacts = 0
+	self.energy = 1
+	local glider = self.glider
+	glider:SetAttribute("Respawns", 0)
+	glider:SetAttribute("Impacts", 0)
+	glider:SetAttribute("Checkpoint", 0)
+	glider:SetAttribute("Completed", false)
+	glider:SetAttribute("RunTime", 0)
+end
+
+-- Impulso disponible o no (el controlador lo decide por nivel). Sin impulso nadie se balancea.
+function GliderSession.setPumpEnabled(self: Session, enabled: boolean)
+	if self.pumpEnabled == enabled then
+		return
+	end
+	self.pumpEnabled = enabled
+	self.glider:SetAttribute("PumpEnabled", enabled)
+	if not enabled then
+		for _, slot in self.slots do
+			slot.pumping = false
+		end
+	end
 end
 
 -- Compatibilidad: antes solo se reaparecía en el checkpoint.
@@ -746,7 +800,8 @@ function GliderSession._fly(self: Session, dt: number, params: RaycastParams)
 		local fraction = Config.AssistTurnFraction * self.assistStrength
 		if self.windAssist then
 			fraction = math.max(fraction, Config.WindAssistTurnFraction)
-			windVertical += math.clamp((goal.Y - position.Y) * 0.5, -Config.WindAssistVertical, Config.WindAssistVertical)
+			local vertical = if self.practice then Config.PracticeAssistVertical else Config.WindAssistVertical
+			windVertical += math.clamp((goal.Y - position.Y) * 0.5, -vertical, vertical)
 		end
 		if fraction > 0 then
 			assistTurn = GliderPhysics.pursuitTurn(position, GliderPhysics.forwardOf(physics.yaw), goal, physics.speed) * fraction
@@ -760,7 +815,7 @@ function GliderSession._fly(self: Session, dt: number, params: RaycastParams)
 			pumpers += 1
 		end
 	end
-	if self.energy <= 0 then
+	if self.energy <= 0 or not self.pumpEnabled then
 		pumpers = 0
 	end
 	if pumpers > 0 then
@@ -781,6 +836,7 @@ function GliderSession._fly(self: Session, dt: number, params: RaycastParams)
 		landing = self.completed,
 		windVertical = windVertical,
 		wind = self.windField,
+		practice = self.practice,
 	})
 	if result.landed then
 		self:_land()
@@ -797,7 +853,22 @@ function GliderSession._fly(self: Session, dt: number, params: RaycastParams)
 		self:_crash()
 		return
 	end
+	if result.event == "bonk" and flight.time - self.lastBonk > 0.5 then
+		self.lastBonk = flight.time
+		self.bonks += 1
+		glider:SetAttribute("Bonks", self.bonks)
+	end
 	local contact = result.contact
+	if self.practice then
+		-- Práctica: si os quedáis atascados (el ala casi parada contra algo, rebotando), el viento a favor os ayuda
+		-- a pasar; se va en cuanto voláis limpio unos segundos.
+		self.stuckTime = if physics.speed < Config.ForwardSpeed * 0.5 then self.stuckTime + dt else 0
+		if self.stuckTime > Config.PracticeStuckTime then
+			self:_setWindAssist(true)
+		elseif self.windAssist and self.cleanTime > 3 then
+			self:_setWindAssist(false)
+		end
+	end
 	if contact then
 		self.cleanTime = 0
 		if result.event == "impact" or not flight.scraping then

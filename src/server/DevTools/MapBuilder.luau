@@ -38,6 +38,9 @@ local CRUISE = 400 -- altitud del despegue
 local START = Vector3.new(100, CRUISE, 0) -- comienzo del valle inicial (fondo de la StartIsland)
 local LAUNCH_S = 300 -- el despegue está a esta distancia del comienzo del valle inicial
 local VALLEY = { length = 600, width = 700, floorDepth = 320, wallTop = 420 } -- pausas entre corredores
+-- Ritmo: dentro de un capítulo el valle es corto (~6 s: pantalla de checkpoint y respiro); al cambiar de capítulo,
+-- largo (10 s: respiro grande y bioma nuevo).
+local SHORT_VALLEY = 360
 local WALL_T = 24 -- grosor de paredes
 local SLAB_T = 8 -- grosor de suelo y techo
 local RIM = 60 -- las paredes sobresalen por encima del techo: se lee como cañón
@@ -380,7 +383,7 @@ end
 
 local function makeContext(level: Model, frames, marks, scale: number?)
 	-- scale: el corredor se estrechó (capítulos 3-5); los obstáculos laterales se estrechan igual.
-	local ctx = { points = {}, scale = scale or 1 }
+	local ctx = { points = {}, forks = {}, scale = scale or 1 }
 	function ctx.mark(name: string): number
 		return assert(marks[name], "marca desconocida: " .. name)
 	end
@@ -396,8 +399,18 @@ local function makeContext(level: Model, frames, marks, scale: number?)
 	end
 
 	-- Punto de la línea ideal (s = distancia desde la entrada, u lateral, v vertical respecto al centro).
-	function ctx.point(s, u, v)
-		table.insert(ctx.points, { s = s, u = u, v = v, feature = true })
+	-- route = "A" / "B": solo para la línea de ese carril de una bifurcación (Route / RouteB).
+	-- telegraph = false: sin chevrones de aviso.
+	function ctx.point(s, u, v, route, telegraph)
+		table.insert(ctx.points, { s = s, u = u, v = v, feature = true, route = route, telegraph = telegraph })
+	end
+
+	-- Carril (de ctx.divider) o todo el corredor: ancho y desplazamiento lateral de un obstáculo de lado a lado.
+	local function span(f, lane)
+		if lane then
+			return lane.w, lane.u
+		end
+		return f.width + 2 * WALL_T, 0
 	end
 
 	-- Anillo guía amarillo (visual, se atraviesa): aro circular que cabe en el hueco w × h.
@@ -430,17 +443,108 @@ local function makeContext(level: Model, frames, marks, scale: number?)
 	-- VIGA colgada del techo (cara frontal vertical): hay que pasar por DEBAJO.
 	-- reach = cuánto baja por debajo de la línea central (obliga a bajar al menos eso).
 	-- below = studs por debajo de la viga a los que pasa la línea ideal (35 por defecto).
-	function ctx.lintel(s, reach, below)
+	-- lane (opcional) = carril de una bifurcación (ctx.divider): la viga solo tapa ese carril.
+	function ctx.lintel(s, reach, below, lane)
 		local f = at(s)
 		local depth = f.height / 2 + reach
 		local ceilingY = f.pos.Y + f.height / 2
 		local bottom = ceilingY - depth
 		local top = ceilingY + RIM
-		local center = Vector3.new(f.pos.X, (top + bottom) / 2, f.pos.Z)
-		newPart(features, nextName("Lintel"), "Obstacle", Vector3.new(f.width + 2 * WALL_T, top - bottom, 40), CFrame.lookAt(center, center + forwardOf(f.heading)))
+		local width, u = span(f, lane)
+		local center = Vector3.new(f.pos.X, (top + bottom) / 2, f.pos.Z) + rightOf(f.heading) * u
+		newPart(features, nextName("Lintel"), "Obstacle", Vector3.new(width, top - bottom, 40), CFrame.lookAt(center, center + forwardOf(f.heading)))
 		local v = -(reach + (below or 35))
-		ctx.point(s, 0, v)
-		ctx.guide(s, 0, v)
+		ctx.point(s, u, v, lane and lane.route, if lane then false else nil)
+		ctx.guide(s, u, v, if lane then lane.w - 20 else nil)
+	end
+
+	-- MURO que sube del suelo (cara frontal vertical): hay que pasar por ENCIMA. Es el espejo de la viga: obliga a
+	-- SUBIR (las lomas no obligan: son suelo y el ala resbala por encima). reach = cuánto sobrepasa la línea central;
+	-- above = studs por encima del muro a los que pasa la línea ideal (35 por defecto); lane = solo ese carril.
+	function ctx.barrier(s, reach, above, lane)
+		local f = at(s)
+		local bottom = f.pos.Y - f.height / 2 - 30
+		local top = f.pos.Y + reach
+		local width, u = span(f, lane)
+		local center = Vector3.new(f.pos.X, (top + bottom) / 2, f.pos.Z) + rightOf(f.heading) * u
+		newPart(features, nextName("Barrier"), "Obstacle", Vector3.new(width, top - bottom, 40), CFrame.lookAt(center, center + forwardOf(f.heading)))
+		local v = reach + (above or 35)
+		ctx.point(s, u, v, lane and lane.route, if lane then false else nil)
+		ctx.guide(s, u, v, if lane then lane.w - 20 else nil)
+	end
+
+	-- VENTANA: pared de lado a lado con un hueco de w × h centrado en (u, v). Un hueco en diagonal lo resuelve UN
+	-- solo jugador (arriba-izquierda: el izquierdo fuera · abajo-izquierda: el derecho dentro · arriba-derecha: el
+	-- derecho fuera · abajo-derecha: el izquierdo dentro). Piezas WindowNNLeft/Right/Top/Bottom.
+	-- extent (opcional) = { halfW, bottom, top }: tamaño de la pared si tiene que tapar algo mayor que el corredor en s
+	-- (la boca de un túnel al final de una sala grande).
+	function ctx.window(s, u, v, w, h, extent)
+		u *= ctx.scale
+		local f = at(s)
+		local cf = frameCFrame(f)
+		local halfW = if extent then extent.halfW else f.width / 2 + WALL_T
+		local bottom = if extent then extent.bottom else -f.height / 2 - 30
+		local top = if extent then extent.top else f.height / 2 + RIM
+		local name = nextName("Window")
+		local function block(suffix, u0, u1, v0, v1)
+			if u1 - u0 < 0.5 or v1 - v0 < 0.5 then
+				return
+			end
+			local part = newPart(features, name .. suffix, "Obstacle", Vector3.new(u1 - u0, v1 - v0, 16), cf * CFrame.new((u0 + u1) / 2, (v0 + v1) / 2, 0))
+			-- Para el vestido: qué borde da al hueco y, en los laterales, su tramo vertical (en Y local de la pieza).
+			part:SetAttribute("Edge", suffix)
+			part:SetAttribute("EdgeSpan", Vector2.new(v - h / 2 - (v0 + v1) / 2, v + h / 2 - (v0 + v1) / 2))
+		end
+		block("Left", -halfW, u - w / 2, bottom, top)
+		block("Right", u + w / 2, halfW, bottom, top)
+		block("Top", u - w / 2, u + w / 2, v + h / 2, top)
+		block("Bottom", u - w / 2, u + w / 2, bottom, v - h / 2)
+		ctx.point(s, u, v)
+		ctx.guide(s, u, v, w - 16, h - 16)
+	end
+
+	-- BIFURCACIÓN: muro largo de s0 a s1 (centro lateral u, ancho width, con morro de pilar en cada punta) que parte
+	-- el corredor en dos carriles; los dos valen. La línea ideal (Route) va por el carril `pass` (-1 izquierda,
+	-- +1 derecha) y RouteB por el otro. Devuelve los carriles { A = { u, w, route }, B = … } para ctx.lintel /
+	-- ctx.barrier. Tramos rectos o curvas suaves.
+	function ctx.divider(s0, s1, u, width, pass)
+		u *= ctx.scale
+		width *= ctx.scale
+		local s = s0
+		while s < s1 - 1 do
+			local e = math.min(s + 100, s1)
+			local fa, fb = at(s), at(e)
+			local pa = fa.pos + rightOf(fa.heading) * u
+			local pb = fb.pos + rightOf(fb.heading) * u
+			local bottom = math.min(fa.pos.Y, fb.pos.Y) - math.max(fa.height, fb.height) / 2 - 30
+			local top = math.max(fa.pos.Y, fb.pos.Y) + math.max(fa.height, fb.height) / 2 + RIM
+			local flatA, flatB = Vector3.new(pa.X, 0, pa.Z), Vector3.new(pb.X, 0, pb.Z)
+			local dir = flatB - flatA
+			local mid = (flatA + flatB) / 2 + Vector3.new(0, (bottom + top) / 2, 0)
+			newPart(features, nextName("Divider"), "Obstacle", Vector3.new(width, top - bottom, dir.Magnitude + 2), CFrame.lookAt(mid, mid + dir))
+			s = e
+		end
+		for _, sn in { s0, s1 } do
+			local f = at(sn)
+			local bottom, top = -f.height / 2 - 30, f.height / 2 + RIM
+			local center = f.pos + rightOf(f.heading) * u + Vector3.new(0, (bottom + top) / 2, 0)
+			local side = width / math.sqrt(2)
+			newPart(features, nextName("Pillar"), "Obstacle", Vector3.new(side, top - bottom, side), CFrame.lookAt(center, center + forwardOf(f.heading)) * CFrame.Angles(0, math.rad(45), 0))
+		end
+		local f = at(s0)
+		local leftEdge, rightEdge = u - width / 2, u + width / 2
+		local lanes = {
+			[-1] = { u = (-f.width / 2 + leftEdge) / 2, w = leftEdge + f.width / 2 },
+			[1] = { u = (rightEdge + f.width / 2) / 2, w = f.width / 2 - rightEdge },
+		}
+		local laneA, laneB = lanes[pass], lanes[-pass]
+		laneA.route, laneB.route = "A", "B"
+		table.insert(ctx.forks, { s0 = s0, s1 = s1, A = laneA.u, B = laneB.u }) -- la línea de relleno va por el carril
+		for _, lane in { laneA, laneB } do
+			ctx.point(s0 - 40, lane.u, 0, lane.route, false)
+			ctx.point(s1 + 30, lane.u, 0, lane.route, false)
+		end
+		return { A = laneA, B = laneB }
 	end
 
 	-- SALIENTE de una pared (side -1 izquierda, +1 derecha; prisma a 45°): hay que apartarse al otro lado.
@@ -480,11 +584,12 @@ local function makeContext(level: Model, frames, marks, scale: number?)
 	-- y el FlightTester las leen con GliderPhysics.windZones; MapDresser las hace visibles (partículas y velo).
 	-- Van en tramos rectos (la caja sigue el rumbo del centro del tramo).
 	local windFolder: Folder? = nil
-	local function windZone(kind: string, s0: number, length: number, velocity: Vector3, widthFactor: number?)
+	-- u / width (opcionales) = centro lateral y ancho de la zona (por defecto, todo el corredor).
+	local function windZone(kind: string, s0: number, length: number, velocity: Vector3, u: number?, width: number?)
 		windFolder = windFolder or newFolder(level, "Wind")
 		local f = at(s0 + length / 2)
-		local size = Vector3.new(f.width * (widthFactor or 1), f.height, length)
-		local zone = marker(windFolder :: Folder, nextName(kind), frameCFrame(f), size)
+		local size = Vector3.new(width or f.width, f.height, length)
+		local zone = marker(windFolder :: Folder, nextName(kind), frameCFrame(f) * CFrame.new(u or 0, 0, 0), size)
 		zone:SetAttribute("WindVelocity", velocity)
 		zone:SetAttribute("WindKind", kind)
 		return zone, f
@@ -492,19 +597,28 @@ local function makeContext(level: Model, frames, marks, scale: number?)
 
 	-- CORRIENTE ASCENDENTE: sube `strength` studs/s mientras se está dentro (s0 … s0+length). Con ella se pasan
 	-- lomas más altas y empinadas de lo que el ala sube sola (ridge con upSlope > 23°).
-	function ctx.updraft(s0, length, strength)
-		windZone("Updraft", s0, length, Vector3.new(0, strength, 0))
+	-- u / width (opcionales): una columna a un lado del corredor en vez de todo el ancho.
+	function ctx.updraft(s0, length, strength, u, width)
+		windZone("Updraft", s0, length, Vector3.new(0, strength, 0), u, width)
 	end
 
 	-- CORRIENTE DESCENDENTE: hunde `strength` studs/s (p. ej. antes de una loma: hay que subir antes o impulsarse).
-	function ctx.downdraft(s0, length, strength)
-		windZone("Downdraft", s0, length, Vector3.new(0, -strength, 0))
+	function ctx.downdraft(s0, length, strength, u, width)
+		windZone("Downdraft", s0, length, Vector3.new(0, -strength, 0), u, width)
 	end
 
 	-- VIENTO LATERAL: empuja hacia `side` (-1 izquierda, +1 derecha) `strength` studs/s: hay que inclinarse contra él.
-	function ctx.crosswind(s0, length, side, strength)
+	function ctx.crosswind(s0, length, side, strength, u, width)
 		local f = at(s0 + length / 2)
-		windZone("Crosswind", s0, length, rightOf(f.heading) * side * strength)
+		windZone("Crosswind", s0, length, rightOf(f.heading) * side * strength, u, width)
+	end
+
+	-- RÁFAGAS (turbulencia): `count` zonas cortas de viento lateral alternas desde s0, cada `spacing` studs y de
+	-- `length` de largo, la primera hacia `side`. Hay que ir corrigiendo a un lado y a otro.
+	function ctx.gusts(s0, count, spacing, length, strength, side)
+		for i = 0, count - 1 do
+			ctx.crosswind(s0 + i * spacing, length, (side or 1) * (if i % 2 == 0 then 1 else -1), strength)
+		end
 	end
 
 	-- ── Obstáculos móviles (Movers.luau): la pieza queda en su posición de t = 0 con atributos de movimiento;
@@ -666,7 +780,7 @@ local function makeContext(level: Model, frames, marks, scale: number?)
 		local lastS = -math.huge
 		local features = {}
 		for _, p in ctx.points do
-			if p.feature then
+			if p.feature and p.telegraph ~= false then
 				table.insert(features, p)
 			end
 		end
@@ -680,7 +794,8 @@ local function makeContext(level: Model, frames, marks, scale: number?)
 			if p.s - previous < 260 or math.max(math.abs(du), math.abs(dv)) < 15 then
 				continue
 			end
-			local angle = if math.abs(dv) >= math.abs(du) then (if dv > 0 then math.pi / 2 else -math.pi / 2) else (if du > 0 then 0 else math.pi)
+			-- Hacia el paso (también en diagonal: ventanas).
+			local angle = if math.abs(du) < 15 then (if dv > 0 then math.pi / 2 else -math.pi / 2) elseif math.abs(dv) < 15 then (if du > 0 then 0 else math.pi) else math.atan2(dv, du)
 			for index, lead in { { 200, 0.45 }, { 130, 0.8 } } do
 				local s = p.s - lead[1]
 				if s < 60 then
@@ -703,28 +818,51 @@ end
 -- Línea ideal completa: puntos de los obstáculos + centro del corredor cada ROUTE_SPACING.
 local function buildRoute(level: Model, frames, ctx)
 	local length = frames[#frames].s
-	local points = table.clone(ctx.points)
-	local s = ROUTE_SPACING
-	while s < length - 60 do
-		local nearFeature = false
+	local hasB = false
+	for _, p in ctx.points do
+		if p.route == "B" then
+			hasB = true
+		end
+	end
+	-- Route = todo menos el carril B; RouteB (solo si hay bifurcación) = todo menos el carril A.
+	local variants = if hasB then { "A", "B" } else { "A" }
+	for _, variant in variants do
+		local skip = if variant == "A" then "B" else "A"
+		local points = {}
 		for _, p in ctx.points do
-			if math.abs(p.s - s) < 120 then
-				nearFeature = true
+			if p.route ~= skip then
+				table.insert(points, p)
 			end
 		end
-		if not nearFeature then
-			table.insert(points, { s = s, u = 0, v = 0 })
+		local s = ROUTE_SPACING
+		while s < length - 60 do
+			local nearFeature = false
+			for _, p in ctx.points do
+				if math.abs(p.s - s) < 120 then
+					nearFeature = true
+				end
+			end
+			if not nearFeature then
+				-- Dentro de una bifurcación, por el centro de su carril (el centro del corredor es el divisor).
+				local u = 0
+				for _, fork in ctx.forks do
+					if s >= fork.s0 - 60 and s <= fork.s1 + 40 then
+						u = fork[variant]
+					end
+				end
+				table.insert(points, { s = s, u = u, v = 0 })
+			end
+			s += ROUTE_SPACING
 		end
-		s += ROUTE_SPACING
-	end
-	table.sort(points, function(a, b)
-		return a.s < b.s
-	end)
-	local folder = newFolder(level, "Route")
-	for index, p in points do
-		local f = frameAt(frames, p.s)
-		local position = f.pos + rightOf(f.heading) * p.u + Vector3.new(0, p.v, 0)
-		marker(folder, string.format("P%02d", index), CFrame.lookAt(position, position + forwardOf(f.heading)))
+		table.sort(points, function(a, b)
+			return a.s < b.s
+		end)
+		local folder = newFolder(level, if variant == "A" then "Route" else "RouteB")
+		for index, p in points do
+			local f = frameAt(frames, p.s)
+			local position = f.pos + rightOf(f.heading) * p.u + Vector3.new(0, p.v, 0)
+			marker(folder, string.format("P%02d", index), CFrame.lookAt(position, position + forwardOf(f.heading)))
+		end
 	end
 end
 
@@ -735,223 +873,313 @@ end
 -- 26-50 dominar. Los capítulos 1-2 son fáciles a propósito: nada de ventanas ni precisión fuerte.
 
 local LEVELS = {
-	-- ── Capítulo 1 · Pradera (1-5): lo básico ───────────────────────────────
-	-- Corredores más ajustados (≈ 200 × 150: el ala se siente rápida) y cortos, con algo cada ~300 studs.
-	-- Elementos nuevos del capítulo: anillos de impulso (2), plumas (3) y corriente ascendente (4).
-	{ -- 01: subir y bajar.
-		title = "Up and Down",
-		width = 240,
+	-- ── Capítulo 1 · Pradera (1-5): "Juntos" ─────────────────────────────────
+	-- Aprender a volar a dúo: los dos igual (1), opuestos y cambio de lado (2), uno solo (3), la primera fuerza y
+	-- el primer espacio abierto (4) y elegir juntos (5). Solo la barra: el impulso llega en el nivel 6.
+	-- Cada nivel: presentar → practicar → giro → final memorable → respiro. Nunca > 5 s sin nada que hacer.
+	{ -- 01 · Up & Under — el sube-y-baja. Vigas (bajar) y muros (subir) alternos, cada vez más juntos
+		-- (6 s → 3,7 s). Coordinación: "¡ABAJO!… ¡ARRIBA!" a la vez. Final: "la ola", con plumas en la línea buena.
+		title = "Up & Under",
+		tagline = "Dive. Climb. Faster.",
+		width = 220,
 		height = 170,
-		path = { { kind = "straight", length = 1750 } },
+		path = { { kind = "straight", length = 2330 } },
 		features = function(c)
-			c.ridge(420, 6)
-			c.lintel(760, 8, 45)
-			c.feathers(880, 1000, 3, 0, -30, 0, 20)
-			c.ridge(1120, 8)
-			c.lintel(1450, 8, 45)
+			c.lintel(380, 15, 35) -- presentar: bajar
+			c.barrier(720, 15, 35) -- presentar: subir
+			c.lintel(1030, 10, 35) -- practicar
+			c.barrier(1310, 5, 32)
+			c.lintel(1580, 5, 32) -- la ola
+			c.feathers(1640, 1730, 3, 0, -20, 0, 18)
+			c.barrier(1820, 5, 32)
+			c.lintel(2060, 5, 32)
 		end,
 	},
-	{ -- 02: izquierda / derecha; anillos de impulso en el interior de las curvas (el atajo).
-		title = "Left and Right",
-		width = 200,
-		height = 150,
-		path = {
-			{ kind = "straight", length = 250 },
-			{ kind = "arc", angle = 35, radius = 380 },
-			{ kind = "straight", length = 160 },
-			{ kind = "arc", angle = -70, radius = 380 },
-			{ kind = "straight", length = 160 },
-			{ kind = "arc", angle = 70, radius = 380 },
-			{ kind = "straight", length = 160 },
-			{ kind = "arc", angle = -35, radius = 380 },
-			{ kind = "straight", length = 250 },
-		},
-		features = function(c)
-			c.boostRing(250 + 380 * math.rad(35) / 2, -45, 0)
-			c.boostRing(250 + 380 * math.rad(35) + 160 + 380 * math.rad(70) / 2, 45, 0)
-			c.boostRing(250 + 380 * math.rad(35) + 160 + 380 * math.rad(70) + 160 + 380 * math.rad(70) / 2, -45, 0)
-		end,
-	},
-	{ -- 03: altura + giro a la vez; plumas en el borde de las curvas.
-		title = "Climb and Turn",
-		width = 200,
-		height = 150,
-		path = {
-			{ kind = "straight", length = 220 },
-			{ kind = "arc", angle = 30, radius = 380, rise = 60 },
-			{ kind = "mark", name = "a" },
-			{ kind = "straight", length = 200 },
-			{ kind = "arc", angle = -60, radius = 380, rise = -90 },
-			{ kind = "mark", name = "b" },
-			{ kind = "straight", length = 200 },
-			{ kind = "arc", angle = 30, radius = 380, rise = 30 },
-			{ kind = "straight", length = 250 },
-		},
-		features = function(c)
-			c.feathers(80, 380, 5, 0, -20, -45, 25)
-			c.feathers(c.mark("a") + 60, c.mark("b") - 60, 6, 0, 30, 45, -30)
-			c.boostRing(c.mark("b") + 100, 0, 30)
-			c.feathers(c.mark("b") + 260, c.mark("b") + 520, 4, -40, 0, 40, 0)
-		end,
-	},
-	{ -- 04: corriente ascendente: sin ella la loma alta (35°) no se sube.
-		title = "Rising Air",
+	{ -- 02 · Swap — izquierda-derecha de verdad. Curvas comprometidas (uno fuera y el otro dentro), pilares a
+		-- lados alternos y una chicane: cambiar de lado los dos a la vez. Sin sincronía, bache arriba o abajo.
+		-- Final: la chicane (≈ 7 s cambiando sin parar).
+		title = "Swap",
+		tagline = "Swap sides together",
 		width = 200,
 		height = 170,
 		path = {
 			{ kind = "straight", length = 250 },
-			{ kind = "arc", angle = 25, radius = 360 },
-			{ kind = "arc", angle = -25, radius = 360 },
-			{ kind = "mark", name = "loma" },
-			{ kind = "straight", length = 900 },
-			{ kind = "arc", angle = -20, radius = 360 },
-			{ kind = "arc", angle = 20, radius = 360 },
-			{ kind = "straight", length = 200 },
+			{ kind = "arc", angle = 60, radius = 170 },
+			{ kind = "straight", length = 180 },
+			{ kind = "arc", angle = -60, radius = 170 },
+			{ kind = "straight", length = 200, width = 280 },
+			{ kind = "mark", name = "pillars" },
+			{ kind = "straight", length = 500 },
+			{ kind = "straight", length = 150, width = 190 },
+			{ kind = "mark", name = "chicane" },
+			{ kind = "arc", angle = 50, radius = 120 },
+			{ kind = "arc", angle = -100, radius = 120 },
+			{ kind = "arc", angle = 50, radius = 120 },
+			{ kind = "straight", length = 150 },
 		},
 		features = function(c)
-			local a = c.mark("loma")
-			c.updraft(a + 40, 440, 22)
-			c.ridge(a + 480, 35, 32, 25)
-			c.feathers(a + 120, a + 300, 5, 0, 10, 0, 60)
-			c.boostRing(a + 700, 0, -10)
+			local p = c.mark("pillars") -- slalom: cada pilar, cambio de lado
+			c.pillar(p + 50, 40, 64, -1)
+			c.pillar(p + 245, -40, 64, 1)
+			c.pillar(p + 440, 40, 64, -1)
+			local q = c.mark("chicane")
+			c.feathers(q + 105 + 70, q + 105 + 140, 3, 30, 0, 30, 0) -- por dentro de la curva del medio
 		end,
 	},
-	{ -- 05: prueba del capítulo: subida larga con corriente, loma, viga, anillos y plumas.
-		title = "Meadow Trial",
+	{ -- 03 · Windows — ¿quién se mueve? Paredes con un hueco desplazado: arriba y abajo (conocidos), luego las
+		-- diagonales, que empieza a resolver UNO solo (arriba-izquierda: el izquierdo fuera · abajo-derecha: el
+		-- izquierdo dentro · arriba-derecha: el derecho fuera). Si se mueve el que no era: BONK con el marco.
+		-- Final: abajo-izquierda → arriba-izquierda seguidas (cambia quién se mueve).
+		title = "Windows",
+		tagline = "Who moves?",
+		width = 220,
+		height = 170,
+		path = { { kind = "straight", length = 2230 } },
+		features = function(c)
+			c.window(340, 0, 30, 130, 90) -- los dos fuera
+			c.window(630, 0, -30, 130, 90) -- los dos dentro
+			c.window(940, -45, 30, 120, 90) -- arriba-izquierda
+			c.window(1240, 45, -30, 120, 90) -- abajo-derecha
+			c.window(1540, 45, 30, 120, 90) -- arriba-derecha
+			c.window(1820, -45, -30, 115, 88) -- abajo-izquierda
+			c.window(2040, -45, 30, 115, 88) -- arriba-izquierda
+		end,
+	},
+	{ -- 04 · The Chimney — la corriente gigante. El corredor se abre a una sala enorme (el suelo cae) con una
+		-- columna ascendente a la derecha; la sala acaba en un muro de +230 que sin la corriente no se sube.
+		-- Primera fuerza y primer espacio abierto: respiro y espectáculo tras tres niveles técnicos.
+		-- Final: salir disparados por encima del borde y bajar planeando, con una rampa de surf al final.
+		title = "The Chimney",
+		tagline = "Ride the wind up",
 		width = 200,
-		height = 160,
+		height = 170,
 		path = {
+			{ kind = "straight", length = 380 },
+			{ kind = "straight", length = 120, width = 460, height = 560 },
+			{ kind = "mark", name = "room" },
+			{ kind = "straight", length = 340 },
+			{ kind = "straight", length = 150, rise = 250, width = 200, height = 170 },
 			{ kind = "straight", length = 200 },
-			{ kind = "mark", name = "subida" },
-			{ kind = "straight", length = 900, rise = 180 },
-			{ kind = "arc", angle = 30, radius = 380 },
-			{ kind = "arc", angle = -30, radius = 380 },
-			{ kind = "mark", name = "final" },
-			{ kind = "straight", length = 850 },
+			{ kind = "straight", length = 700, rise = -250 },
+			{ kind = "mark", name = "surf" },
+			{ kind = "straight", length = 500 },
 		},
 		features = function(c)
-			local a = c.mark("subida")
-			c.updraft(a + 250, 250, 14)
-			c.feathers(a + 260, a + 480, 4, 30, 20, 30, 40)
-			c.feathers(a + 650, a + 850, 4, -35, -10, -35, -10)
-			local b = c.mark("final")
-			c.boostRing(b + 80, -40, 10)
-			c.ridge(b + 380, 10)
-			c.feathers(b + 470, b + 650, 4, 0, -30, 0, -30)
-			c.lintel(b + 700, 10)
+			local room = c.mark("room")
+			c.updraft(room - 80, 400, 26, 110, 150) -- la columna (a la derecha de la sala)
+			c.guide(room + 20, 110, 20, 140, 140)
+			c.point(room - 60, 90, 0)
+			c.point(room + 60, 110, 60)
+			c.point(room + 200, 110, 170)
+			c.point(room + 290, 70, 240)
+			c.barrier(room + 330, 230, 30) -- el borde del acantilado
+			c.feathers(room + 520, room + 600, 3, 0, 15, 0, 15)
+			c.feathers(1290, 1440, 3, -45, 0, -45, 0) -- la bajada, a un lado y a otro
+			c.feathers(1560, 1710, 3, 45, 0, 45, 0)
+			local surf = c.mark("surf")
+			c.ridge(surf + 260, 10, 20, 25) -- rampa: el suelo te sube (inofensiva)
+			c.feathers(surf + 240, surf + 280, 2, 0, 45, 0, 45)
+		end,
+	},
+	{ -- 05 · Split Decision (prueba del capítulo) — el camino se divide. Calentamiento (viga + muro), bifurcación
+		-- (carril alto: muros y plumas · carril bajo: vigas; los dos valen), S comprometida y dos ventanas en
+		-- diagonal. Si dudáis, recto contra el morro del divisor. Final: "¡IZQUIERDA! NO, EL OTRO LADO."
+		title = "Split Decision",
+		tagline = "High road or low road?",
+		width = 220,
+		height = 170,
+		path = {
+			{ kind = "straight", length = 620 },
+			{ kind = "straight", length = 150, width = 340 },
+			{ kind = "mark", name = "fork" },
+			{ kind = "straight", length = 820 },
+			{ kind = "straight", length = 150, width = 220 },
+			{ kind = "arc", angle = 50, radius = 160 },
+			{ kind = "arc", angle = -50, radius = 160 },
+			{ kind = "mark", name = "win" },
+			{ kind = "straight", length = 700 },
+		},
+		features = function(c)
+			c.lintel(300, 10, 35)
+			c.barrier(580, 5, 35)
+			local f = c.mark("fork")
+			local lanes = c.divider(f + 60, f + 770, 0, 40, -1) -- A = izquierda (alto) · B = derecha (bajo)
+			c.barrier(f + 280, 15, 35, lanes.A)
+			c.barrier(f + 560, 25, 35, lanes.A)
+			c.feathers(f + 330, f + 500, 3, lanes.A.u, 55, lanes.A.u, 62)
+			c.lintel(f + 280, 15, 35, lanes.B)
+			c.lintel(f + 560, 25, 35, lanes.B)
+			local w = c.mark("win")
+			c.window(w + 300, -45, 30, 120, 90) -- arriba-izquierda
+			c.window(w + 560, 45, -30, 120, 90) -- abajo-derecha
 		end,
 	},
 
-	-- ── Capítulo 2 · Cañón rojo (6-10): estrechamientos y correcciones ────────
-	-- Elementos nuevos: tronco que se balancea (7) y viento lateral (9).
-	{ -- 06: descenso sostenido con anillos para practicar el impulso y dos vigas.
-		title = "Long Descent",
-		width = 200,
-		height = 160,
-		path = {
-			{ kind = "straight", length = 220 },
-			{ kind = "straight", length = 1100, rise = -220 },
-			{ kind = "arc", angle = -20, radius = 400 },
-			{ kind = "arc", angle = 20, radius = 400 },
-			{ kind = "straight", length = 220 },
-		},
-		features = function(c)
-			c.boostRing(300, 0, -20)
-			c.feathers(520, 720, 4, 0, -35, 0, -35)
-			c.boostRing(880, 30, 0)
-			c.feathers(930, 1150, 5, -40, -30, -40, -30)
-			c.lintel(1420, 5, 45)
-		end,
-	},
-	{ -- 07: troncos que se balancean: por debajo siempre se pasa; por los lados, cuando se apartan.
-		title = "Swinging Logs",
-		width = 200,
-		height = 160,
+	-- ── Capítulo 2 · Cañón rojo (6-10): "El cañón empuja" ─────────────────────
+	-- Las fuerzas y el tiempo: velocidad y espacio (6), viento lateral (7), troncos (8), corrientes que hunden (9)
+	-- y la prueba (10), siempre combinados con lo del capítulo 1. El impulso (Espacio) se presenta en el 6.
+	{ -- 06 · The Big Drop — la gran caída. El cañón se abre y la boca del túnel siguiente está 250 más abajo en
+		-- una pared: hay que picar a tiempo ("¡TODO AL CENTRO!"). Túnel rasante (alto 64) con dos pilares
+		-- ("¡quietos!"), muro para salir ("¡ARRIBA!") y subida con anillos: aquí se presenta el impulso.
+		title = "The Big Drop",
+		tagline = "Hold on tight",
+		intro = "NEW: both hold SPACE = BOOST x2",
+		width = 210,
+		height = 170,
 		path = {
 			{ kind = "straight", length = 250 },
-			{ kind = "straight", length = 300, width = 180, height = 150 },
-			{ kind = "mark", name = "troncos" },
-			{ kind = "straight", length = 900 },
-			{ kind = "arc", angle = 20, radius = 420 },
-			{ kind = "arc", angle = -20, radius = 420 },
+			{ kind = "straight", length = 100, width = 380, height = 420 },
+			{ kind = "mark", name = "drop" },
+			{ kind = "straight", length = 640, rise = -250 },
+			{ kind = "straight", length = 2, width = 170, height = 64 },
+			{ kind = "mark", name = "tunnel" },
+			{ kind = "straight", length = 480 },
+			{ kind = "straight", length = 60, width = 210, height = 170 },
+			{ kind = "mark", name = "out" },
+			{ kind = "straight", length = 150 },
+			{ kind = "straight", length = 650, rise = 250 },
 			{ kind = "straight", length = 200 },
 		},
 		features = function(c)
-			local a = c.mark("troncos")
-			c.swingLog(a + 150, 10, 3.6)
-			c.feathers(a + 330, a + 470, 3, 0, 30, 0, 30)
-			c.swingLog(a + 550, 10, 3.2, 0.5)
-			c.boostRing(a + 780, 0, -20)
+			local t = c.mark("tunnel")
+			-- La boca del túnel: pared que tapa todo el cañón, con el hueco del túnel.
+			c.window(t + 1, 0, 0, 150, 54, { halfW = 214, bottom = -240, top = 270 })
+			c.pillar(t + 160, -40, 36, 1)
+			c.pillar(t + 340, 40, 36, -1)
+			local out = c.mark("out")
+			c.barrier(out + 120, 15, 30)
+			c.boostRing(out + 380, 0, 20)
+			c.boostRing(out + 620, 0, 20)
+			c.feathers(out + 700, out + 820, 3, 0, 25, 0, 25)
 		end,
 	},
-	{ -- 08: slalom de salientes con plumas pegadas a las puntas.
-		title = "Gentle Slalom",
-		width = 210,
-		height = 160,
-		path = { { kind = "straight", length = 1900 } },
-		features = function(c)
-			c.promontory(420, -1, 60)
-			c.feathers(400, 440, 2, 5, 25, 5, 25)
-			c.promontory(800, 1, 60)
-			c.boostRing(1000, 0, 20)
-			c.promontory(1200, -1, 60)
-			c.feathers(1180, 1220, 2, -5, -25, -5, -25)
-			c.promontory(1600, 1, 60)
-		end,
-	},
-	{ -- 09: viento lateral: hay que inclinarse contra él (y una loma y una viga al final).
+	{ -- 07 · Crosswind — el viento empuja contra la pared. Slalom de salientes dentro de un viento lateral (a un
+		-- lado cuesta más girar que al otro), viento contrario con una viga dentro (inclinarse y bajar a la vez) y
+		-- final: ráfagas alternas ("¡CORRIGE!").
 		title = "Crosswind",
+		tagline = "Lean into it",
 		width = 210,
-		height = 160,
+		height = 170,
 		path = {
-			{ kind = "straight", length = 200 },
-			{ kind = "arc", angle = 25, radius = 320 },
-			{ kind = "arc", angle = -25, radius = 320 },
-			{ kind = "mark", name = "viento" },
-			{ kind = "straight", length = 700 },
-			{ kind = "arc", angle = -30, radius = 320 },
-			{ kind = "arc", angle = 30, radius = 320 },
-			{ kind = "mark", name = "lomaViga" },
-			{ kind = "straight", length = 700 },
+			{ kind = "straight", length = 250 },
+			{ kind = "mark", name = "w1" },
+			{ kind = "straight", length = 640 },
+			{ kind = "arc", angle = -35, radius = 220 },
+			{ kind = "arc", angle = 35, radius = 220 },
+			{ kind = "mark", name = "w2" },
+			{ kind = "straight", length = 520 },
+			{ kind = "mark", name = "g" },
+			{ kind = "straight", length = 760 },
 		},
 		features = function(c)
-			local a = c.mark("viento")
-			c.crosswind(a + 50, 300, 1, 9)
-			c.feathers(a + 120, a + 330, 4, -50, 0, -50, 0)
-			c.crosswind(a + 400, 250, -1, 9)
-			local b = c.mark("lomaViga")
-			c.ridge(b + 200, 10, 17, 25)
-			c.lintel(b + 600, 4, 50)
+			local w1 = c.mark("w1")
+			c.crosswind(w1 - 60, 700, 1, 12) -- empuja a la derecha
+			c.promontory(w1 + 130, 1, 80) -- el viento empuja hacia este
+			c.promontory(w1 + 310, -1, 70)
+			c.promontory(w1 + 490, 1, 80)
+			c.feathers(w1 + 210, w1 + 240, 2, 15, 0, 15, 0)
+			local w2 = c.mark("w2")
+			c.crosswind(w2 + 30, 440, -1, 14) -- ahora a la izquierda, con una viga dentro
+			c.lintel(w2 + 200, 12, 35)
+			c.promontory(w2 + 400, -1, 60)
+			c.gusts(c.mark("g") + 100, 5, 130, 80, 20, 1)
 		end,
 	},
-	{ -- 10: prueba del capítulo: tronco, viento lateral, salientes, corriente y viga.
-		title = "Canyon Trial",
-		width = 200,
-		height = 160,
+	{ -- 08 · Swinging Logs — ¡espera… AHORA! Un tronco (por debajo siempre se pasa), tronco + muro (bajar y subir
+		-- en seguida), dos troncos en contrafase y un tronco a la salida de una curva.
+		title = "Swinging Logs",
+		tagline = "Wait... NOW!",
+		width = 210,
+		height = 180,
 		path = {
 			{ kind = "straight", length = 250 },
 			{ kind = "mark", name = "a" },
-			{ kind = "straight", length = 700 },
-			{ kind = "arc", angle = -35, radius = 360 },
+			{ kind = "straight", length = 1250 },
+			{ kind = "arc", angle = 35, radius = 220 },
+			{ kind = "arc", angle = -35, radius = 220 },
 			{ kind = "mark", name = "b" },
-			{ kind = "straight", length = 800 },
-			{ kind = "arc", angle = 35, radius = 360 },
-			{ kind = "mark", name = "c" },
-			{ kind = "straight", length = 1050 },
+			{ kind = "straight", length = 620 },
 		},
 		features = function(c)
 			local a = c.mark("a")
-			c.swingLog(a + 150, 10, 3.4)
-			c.crosswind(a + 350, 280, -1, 8)
-			c.boostRing(a + 500, 30, 0)
+			c.swingLog(a + 150, 10, 3.6)
+			c.swingLog(a + 420, 10, 3.4, 0.3)
+			c.barrier(a + 740, 5, 40) -- bajar bajo el tronco y subir: ~300 studs para un dúo nuevo
+			c.swingLog(a + 980, 5, 3.6)
+			c.swingLog(a + 1210, 5, 3.6, 0.5)
+			c.feathers(a + 1070, a + 1110, 2, 0, -40, 0, -40)
 			local b = c.mark("b")
-			c.promontory(b + 200, -1, 55)
-			c.promontory(b + 480, 1, 55)
-			c.feathers(b + 600, b + 760, 4, 0, -35, 0, -35)
-			local cc = c.mark("c")
-			c.updraft(cc + 60, 340, 20)
-			c.ridge(cc + 420, 28, 30, 25)
-			c.lintel(cc + 900, 10)
+			c.swingLog(b + 150, 10, 3.4, 0.2)
+			c.barrier(b + 470, 0, 32)
+		end,
+	},
+	{ -- 09 · Heavy Air — corrientes que hunden: hay que subir antes de lo que dice el instinto. Descendente antes
+		-- de un muro, ascendente de alivio, descendente que ayuda a pasar bajo una viga y final con dos muros
+		-- dentro de una descendente ("¡AGUANTAD FUERA!").
+		title = "Heavy Air",
+		tagline = "Read the air",
+		width = 210,
+		height = 180,
+		path = {
+			{ kind = "straight", length = 250 },
+			{ kind = "mark", name = "a" },
+			{ kind = "straight", length = 1650 },
+			{ kind = "straight", length = 200 },
+		},
+		features = function(c)
+			local a = c.mark("a")
+			c.downdraft(a + 30, 330, 6)
+			c.point(a + 170, 0, 35) -- la buena línea sube antes de lo que pide el muro
+			c.barrier(a + 380, 5, 35)
+			c.updraft(a + 540, 220, 12)
+			c.feathers(a + 580, a + 720, 3, 0, 50, 0, 70)
+			c.downdraft(a + 720, 240, 10) -- esta ayuda a meterse bajo la viga
+			c.lintel(a + 900, 15, 35)
+			c.point(a + 1150, 0, 0)
+			c.downdraft(a + 1250, 450, 6) -- final: dos muros dentro de una descendente ("¡AGUANTAD FUERA!")
+			c.barrier(a + 1400, 0, 32)
+			c.barrier(a + 1640, 10, 40)
+		end,
+	},
+	{ -- 10 · Canyon Trial (prueba del capítulo) — todo el cañón: caída con viga al fondo, viento + ventana,
+		-- tronco, bifurcación con fuerzas (derecha: viento hacia el divisor y viga · izquierda: descendente y muro),
+		-- ráfagas y ventana final.
+		title = "Canyon Trial",
+		tagline = "Everything the canyon has",
+		width = 210,
+		height = 170,
+		path = {
+			{ kind = "straight", length = 250 },
+			{ kind = "straight", length = 100, height = 340 },
+			{ kind = "mark", name = "drop" },
+			{ kind = "straight", length = 380, rise = -170 },
+			{ kind = "straight", length = 100, height = 170 },
+			{ kind = "mark", name = "w" },
+			{ kind = "straight", length = 520 },
+			{ kind = "straight", length = 150, width = 330 },
+			{ kind = "mark", name = "fork" },
+			{ kind = "straight", length = 700 },
+			{ kind = "straight", length = 150, width = 210 },
+			{ kind = "mark", name = "g" },
+			{ kind = "straight", length = 520, rise = 80 },
+			{ kind = "mark", name = "fin" },
+			{ kind = "straight", length = 380, rise = 90 }, -- recupera la altura de la caída
+		},
+		features = function(c)
+			local w = c.mark("w")
+			c.lintel(w + 40, 10, 35) -- al fondo de la caída
+			c.crosswind(w + 140, 330, -1, 10)
+			c.window(w + 330, 40, 25, 120, 90)
+			c.swingLog(w + 430, 10, 3.4)
+			local f = c.mark("fork")
+			local lanes = c.divider(f + 120, f + 660, 0, 40, 1) -- A = derecha · B = izquierda
+			c.crosswind(f + 160, 380, -1, 10, lanes.A.u, lanes.A.w)
+			c.lintel(f + 450, 15, 35, lanes.A)
+			c.downdraft(f + 160, 330, 6, lanes.B.u, lanes.B.w)
+			c.point(f + 260, lanes.B.u, 25, "B", false) -- carril B: subir antes (la descendente hunde)
+			c.barrier(f + 450, 5, 38, lanes.B)
+			c.gusts(c.mark("g") + 80, 4, 130, 80, 16, -1)
+			c.window(c.mark("fin") + 160, -40, -25, 115, 85)
 		end,
 	},
 
@@ -1916,82 +2144,49 @@ local function buildValley(map, name, frames)
 	return model
 end
 
--- ── Tutorial: recorrido corto junto al mundo principal ───────────────────
--- Tres tramos muy fáciles con un bot de compañero (TutorialBot): subir, bajar y girar. Va en Map.Tutorial,
--- lejos del lobby y de las filas del recorrido. El bot pilota el rumbo por la línea ideal y el jugador decide
--- subir o bajar. coach = indicaciones de texto por tramo, en fracciones de la Route: { from, to, hint }.
+-- ── Tutorial: FLIGHT SCHOOL (nivel 0, ~40 s) ─────────────────────────────
+-- Un solo corredor continuo, sin valles: bajar → subir → izquierda → cambio a la derecha → combo sin ayudas.
+-- Cada concepto tiene su situación justo después de presentarlo. Lo vuela el dúo (si alguno es nuevo) antes del
+-- nivel 1, o un jugador solo con el Coach (TutorialBot). Va en Map.Tutorial, lejos del recorrido.
+-- coach = indicaciones por tramo, en fracciones de la Route: { from, to, texto, acción } (acción 1 = marcas
+-- fantasma en la barra del HUD: dónde ponerse cada uno · 3 = el Coach resbala). Texto: una o dos palabras.
 local TUTORIAL_START = Vector3.new(0, CRUISE, 4000)
+local TUTORIAL_LAUNCH_S = 420 -- despegue a 180 studs de la boca: la primera acción llega enseguida
 local TUTORIAL_LEVELS = {
-	{ -- T1: subir por encima de una loma baja.
-		title = "Climb",
+	{
+		title = "Flight School",
+		tagline = "Two riders, one wing",
 		biome = "Pradera",
-		width = 320,
-		height = 230,
-		path = { { kind = "straight", length = 1000 } },
-		features = function(c)
-			c.ridge(560, 10, 14, 20)
-		end,
-		coach = {
-			{ 0, 0.3, "The Coach only does HALF. Move OUT with him to climb!" },
-			{ 0.3, 0.62, "Both OUT! If only one opens, you climb too slowly" },
-			{ 0.62, 0.8, "Back to the CENTER to glide down" },
-			{ 0.8, 1, "The Coach slipped! Lean the OTHER way to fly straight", 3 },
-		},
-	},
-	{ -- T2: bajar por debajo de una viga.
-		title = "Dive",
-		biome = "Pradera",
-		width = 320,
-		height = 230,
-		path = { { kind = "straight", length = 900 } },
-		features = function(c)
-			c.lintel(470, 9, 50)
-		end,
-		coach = {
-			{ 0, 0.2, "Watch out: the Coach is wobbling. Keep the wing straight!", 3 },
-			{ 0.2, 0.55, "Both move IN to the center to dive under the beam!" },
-			{ 0.55, 1, "Move OUT again to climb back up" },
-		},
-	},
-	{ -- T3: girar a la izquierda y a la derecha inclinándose los dos hacia el mismo lado.
-		title = "Turn",
-		biome = "Pradera",
-		width = 230,
-		height = 220,
+		width = 260,
+		height = 180,
 		path = {
-			{ kind = "straight", length = 250 },
-			{ kind = "arc", angle = 55, radius = 250 },
-			{ kind = "straight", length = 250 },
-			{ kind = "arc", angle = -55, radius = 250 },
-			{ kind = "straight", length = 350 },
+			{ kind = "straight", length = 480 },
+			{ kind = "straight", length = 420 },
+			{ kind = "straight", length = 150 },
+			{ kind = "arc", angle = 75, radius = 150 },
+			{ kind = "straight", length = 60 },
+			{ kind = "arc", angle = -75, radius = 150 },
+			{ kind = "mark", name = "combo" },
+			{ kind = "straight", length = 500 },
+			{ kind = "arc", angle = 50, radius = 130 },
+			{ kind = "arc", angle = -50, radius = 130 },
+			{ kind = "straight", length = 120 },
 		},
 		features = function(c)
-			c.guide(250 + 250 * math.rad(55) / 2, 0, 0)
-			c.guide(250 + 250 * math.rad(55) + 250 + 250 * math.rad(55) / 2, 0, 0)
+			c.lintel(380, 25, 40) -- BAJAR: puente bajo con el hueco abajo
+			c.barrier(800, 20, 40) -- SUBIR: muro justo detrás
+			local combo = c.mark("combo")
+			c.lintel(combo + 150, 0, 38) -- COMBO: viga, muro y una S, sin ayudas
+			c.barrier(combo + 480, -5, 38)
 		end,
 		coach = {
-			{ 0.1, 0.42, "Lean LEFT too: the Coach alone only turns half!" },
-			{ 0.42, 0.52, "Back to the center" },
-			{ 0.52, 0.84, "Lean RIGHT together to turn right!" },
-			{ 0.84, 1, "He's slipping again! Correct it and keep straight", 3 },
-		},
-	},
-	{ -- T4: impulso: balancearse con Espacio (el bot también) y pasar por anillos que recargan la energía.
-		title = "Boost",
-		biome = "Pradera",
-		width = 280,
-		height = 210,
-		path = { { kind = "straight", length = 1300 } },
-		features = function(c)
-			c.boostRing(420, 0, 0)
-			c.feathers(560, 760, 5, 0, 0, 0, 0)
-			c.boostRing(900, 0, 0)
-		end,
-		coach = {
-			{ 0, 0.25, "Hold SPACE (or A / PUMP) to swing and speed up!", 2 },
-			{ 0.25, 0.45, "Fly through the blue ring: it refills your energy", 2 },
-			{ 0.45, 0.62, "Grab the golden feathers!" },
-			{ 0.62, 1, "Both pumping at once = BOOST x2. Go!", 2 },
+			{ 0, 0.16, "DIVE!", 1 },
+			{ 0.16, 0.34, "CLIMB!", 1 },
+			{ 0.34, 0.43, "", 1 },
+			{ 0.43, 0.52, "LEFT!", 1 },
+			{ 0.52, 0.62, "SWAP RIGHT!", 1 },
+			{ 0.62, 0.7, "Your turn!", 0 },
+			{ 0.7, 0.78, "", 3 },
 		},
 	},
 }
@@ -2030,7 +2225,7 @@ local function buildCourse(root: Instance, levels, startPos: Vector3, options): 
 	local startFrames = tracePath(startPos, 0, VALLEY.width, 0, { { kind = "straight", length = VALLEY.length } })
 	local start = buildValley(root, "StartIsland", startFrames)
 	cliffFace(start, "BackWall", startFrames[1], nil, VALLEY_EXTENTS)
-	local launch = frameAt(startFrames, LAUNCH_S)
+	local launch = frameAt(startFrames, options.launchS or LAUNCH_S)
 	island(start, launch.pos - Vector3.new(0, 14, 0) - forwardOf(0) * 115, 0, 230, 280, BEACON_COLORS[1], startPos.Y)
 	marker(start, "LaunchPoint", frameCFrame(launch))
 	marker(devSpawns, "Start", frameCFrame(launch))
@@ -2064,6 +2259,8 @@ local function buildCourse(root: Instance, levels, startPos: Vector3, options): 
 		local first, last = frames[1], frames[#frames]
 		local level = newModel(root, levelName)
 		level:SetAttribute("Title", spec.title)
+		level:SetAttribute("Tagline", spec.tagline) -- frase de identidad (tarjeta de título del HUD)
+		level:SetAttribute("Intro", spec.intro) -- aviso de algo nuevo al empezar el nivel (p. ej. el impulso)
 		level:SetAttribute("Length", math.floor(last.s))
 		level:SetAttribute("Width", spec.width * scale)
 		level:SetAttribute("Height", spec.height * scale)
@@ -2102,14 +2299,18 @@ local function buildCourse(root: Instance, levels, startPos: Vector3, options): 
 
 		-- Pausa: valle abierto con isla (o la meta tras el último nivel).
 		if index < #levels then
-			local valleyFrames = tracePath(last.pos, last.heading, VALLEY.width, 0, { { kind = "straight", length = VALLEY.length } })
+			-- Corto dentro del capítulo; largo al cambiar de capítulo y en mitad de los giros de 180° entre filas
+			-- (11-12, 21-22, 31-32, 41-42: si no, las filas vecinas quedarían demasiado cerca).
+			local turnPair = index % 10 == 1 and index > 10
+			local valleyLength = if options.chapters and index % Biomes.CHAPTER_LENGTH ~= 0 and not turnPair then SHORT_VALLEY else VALLEY.length
+			local valleyFrames = tracePath(last.pos, last.heading, VALLEY.width, 0, { { kind = "straight", length = valleyLength } })
 			local rest = buildValley(root, string.format("RestIsland%02d", index), valleyFrames)
 			rest:SetAttribute("Index", index)
-			local middle = frameAt(valleyFrames, VALLEY.length / 2)
+			local middle = frameAt(valleyFrames, valleyLength / 2)
 			island(rest, middle.pos - Vector3.new(0, 60, 0), middle.heading, 200, 220, BEACON_COLORS[(index - 1) % #BEACON_COLORS + 1], middle.pos.Y)
 			dressModel(rest, index, index + 1)
 			cursor = valleyFrames[#valleyFrames]
-			total += VALLEY.length
+			total += valleyLength
 		else
 			local finishFrames = tracePath(last.pos, last.heading, VALLEY.width, 0, { { kind = "straight", length = 900 } })
 			local finish = buildValley(root, "FinishIsland", finishFrames)
@@ -2211,7 +2412,7 @@ function buildMap(options): string
 	local tutorial = Instance.new("Folder")
 	tutorial.Name = "Tutorial"
 	tutorial.Parent = map
-	local tutorialSummary, tutorialTotal = buildCourse(tutorial, TUTORIAL_LEVELS, TUTORIAL_START, { dress = dress, dressUpTo = math.huge, seedBase = 7310, moveTemplate = false })
+	local tutorialSummary, tutorialTotal = buildCourse(tutorial, TUTORIAL_LEVELS, TUTORIAL_START, { dress = dress, dressUpTo = math.huge, seedBase = 7310, moveTemplate = false, launchS = TUTORIAL_LAUNCH_S })
 
 	local parts = 0
 	for _, d in map:GetDescendants() do

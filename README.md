@@ -76,21 +76,24 @@ ecuaciones que el juego (`GliderPhysics`) en dos modos:
 
 | Niveles | Tiene que pasar |
 |---|---|
-| 1-10 (capítulos 1-2: aprender) | novato en el juego sin golpes · tranquilo estricto ≥ 8 |
+| 1-10 (capítulos 1-2: aprender) | completo estricto ≥ 8 · novato en el juego con ≤ 1 golpe (sin perder el ala) |
 | 11-25 (capítulos 3-5: practicar) | novato en el juego con ≤ 1 golpe · tranquilo estricto ≥ 4 |
 | 26-50 (capítulos 6-10: dominar) | completo estricto ≥ 4 · tranquilo en el juego sin golpes |
 
 Los pilotos vuelan con las corrientes del nivel, y en los niveles con obstáculos móviles cada piloto vuela con
 **4 desfases** del reloj: tiene que pasar con todos (ningún móvil mata sin remedio).
 
-Además (de diseño, no lo mide el piloto): ≥ 2 s de vuelo (120 studs) entre dos obstáculos, como mucho una idea nueva
-por nivel, y el último nivel de cada capítulo combina las ideas del capítulo.
+En las **bifurcaciones** (`RouteB`) cada piloto vuela los dos carriles. El **ritmo** (algo que hacer cada 2,5-5 s,
+nunca más de ~5 s sin nada en los capítulos 1-2) lo mide `tools/sim/drivers/pacing.luau`. La gramática completa
+(verbos de la barra, piezas, estructura de un nivel, fichas de los niveles 1-10) está en
+**[docs/DISENO_NIVELES.md](docs/DISENO_NIVELES.md)**: es la base para rehacer los niveles 11-50.
 
 - Cada nivel es un **corredor guiado**: paredes laterales y suelo + techo translúcido (se roza, limita la altura).
   Antes de cada obstáculo, dos **chevrones** luminosos apuntan hacia donde hay que ir; la salida tiene un marco luminoso.
 - El trazado se escribe como órdenes (`straight`, `arc`, `rise`, `width`, `height`, `mark`) y los obstáculos van dentro:
-  `ridge` (colina: subir), `lintel` (viga colgada: bajar), `promontory` (saliente de pared: apartarse),
-  `pillar` (pilar exento en rombo, del suelo al techo: rodearlo por el lado que marca el anillo), `guide` (anillo visual).
+  `lintel` (viga colgada: bajar), `barrier` (muro desde el suelo: subir), `window` (pared con un hueco desplazado:
+  apuntar a un cuadrante), `divider` (bifurcación en dos carriles válidos), `promontory` (saliente de pared: apartarse),
+  `pillar` (pilar exento en rombo: rodearlo), `ridge` (rampa: el suelo te sube, inofensiva) y `guide` (anillo visual).
   Añadir un nivel = añadir una entrada a la tabla `LEVELS` de `MapBuilder.luau`.
 - Estructura: `StartIsland → Level01 → RestIsland01 → … → Level50 → FinishIsland`, más `DevSpawns`.
   Entre corredores hay un valle abierto con la isla de descanso; cada corredor empieza en la boca de un acantilado.
@@ -107,8 +110,8 @@ por nivel, y el último nivel de cada capítulo combina las ideas del capítulo.
 
 | Capítulo · bioma | Niveles | Idea de cada nivel (el último combina el capítulo) |
 |---|---|---|
-| 1 · Pradera | 1-5 | subir y bajar · curvas con **anillos** · altura + giro con **plumas** · **corriente ascendente** y loma alta · Meadow Trial |
-| 2 · Cañón rojo | 6-10 | bajada larga con anillos · **troncos que se balancean** · slalom suave · **viento lateral** · Canyon Trial |
+| 1 · Pradera ("Juntos") | 1-5 | Up & Under (vigas y muros) · Swap (curvas y chicane) · Windows (¿quién se mueve?) · The Chimney (corriente gigante) · Split Decision (bifurcación) |
+| 2 · Cañón rojo ("El cañón empuja") | 6-10 | The Big Drop (caída y túnel; llega el impulso) · Crosswind (viento y ráfagas) · Swinging Logs · Heavy Air (descendentes) · Canyon Trial |
 | 3 · Bosque otoñal | 11-15 | giro largo de 90° · colinas seguidas (+90°) · **compuertas** · slalom rápido · Autumn Trial |
 | 4 · Mesetas del desierto | 16-20 | escalones con corriente · bajada con vigas y **corrientes descendentes** · zigzag · saliente antes de un paso estrecho · Mesa Run |
 | 5 · Glaciar | 21-25 | giro de 90° con viento · grieta con corriente (+90°) · carámbanos y **aspas** · salientes dentro de las curvas · Glacier Trial |
@@ -202,26 +205,23 @@ siempre en la salida.
 - Para probarlo en Studio: *Game Settings → Security → Enable Studio Access to API Services* (el place tiene que
   estar publicado). Sin eso, el juego funciona igual y solo avisa de que no guarda.
 
-## Tutorial con bot
+## Flight School (tutorial, ~40 s)
 
-- **Solo la primera vez** que alguien entra (sin `TutorialDone` en `PlayerStats`), a los pocos segundos de aparecer en el
-  lobby sale una ventana: *First time flying?* → **PLAY TUTORIAL** / **NO THANKS**. Responda lo que responda, se
-  guarda `TutorialDone` y no vuelve a salir. (En Studio sin API Services no se guarda: sale en cada Play.)
-- **Recorrido** `Map.Tutorial` (lo genera `MapBuilder.build()`, lejos del lobby y del recorrido): tres tramos cortos
-  vestidos de Pradera, cada uno con su checkpoint: **Climb** (una loma), **Dive** (una viga), **Turn** (izquierda y
-  derecha) y **Boost** (balanceo, anillos y plumas). Si pierdes el ala, reapareces en el último punto seguro. Al terminar: "TUTORIAL COMPLETE!", el Coach baja al centro para aterrizar en la isla y vuelves al lobby.
-- **Bot compañero** (`TutorialBot`): un personaje R15 colgado en el otro extremo de la barra que hace **solo su
-  mitad**, como un compañero de verdad: calcula lo que hace falta para seguir la línea ideal (subir o bajar y girar)
-  y se coloca donde le toca a él. **No copia al jugador**: si no te abres con él, subes a medias; si no te inclinas
-  con él, las curvas (cerradas, radio 250) salen a medias. En algunos momentos **resbala** (se inclina solo hacia un
-  lado y a otro, indicación "The Coach slipped!") y hay que compensarlo inclinándose al contrario para ir recto.
-  Con `tools/sim/drivers/tutorialflight.luau`: un jugador que solo sube y baja (`player=lift`) acaba chocando; uno
-  que también corrige el rumbo (`player=full`, por defecto) llega a la meta.
-- **Indicaciones grandes en pantalla** (`TutorialHints`, atributo `TutorialHint` del ala) y botón **SKIP TUTORIAL**.
-- No cuenta para estadísticas, alas perdidas ni clasificación. La imagen de tutorial antigua queda desactivada
-  (`ShowTutorialOnJoin = false`).
-- Las indicaciones de cada tramo (`coach` en `TUTORIAL_LEVELS` de `MapBuilder`) se guardan en el atributo `Coach`
-  del nivel: el juego no necesita los DevTools.
+- Es el **nivel 0**. Si alguno de los dos del dúo no tiene `TutorialDone`, el dúo despega en `Map.Tutorial`.
+  Al salir, fundido y el ala aparece en la salida del recorrido con una cuenta atrás de 3 s: **nivel 1 sin volver
+  al lobby**. El cronómetro, las medallas y la clasificación empiezan en el nivel 1. `TutorialDone` se guarda
+  para los dos.
+- **Un solo corredor**: bajar (puente) → subir (muro) → izquierda → cambio a la derecha → combo sin ayudas.
+- **Indicaciones**: una palabra por tramo ("DIVE!", "CLIMB!"…) y **marcas fantasma** en la barra del HUD, que
+  indican dónde ponerse cada uno (`GhostLeft` / `GhostRight`, calculadas con `TutorialBot.ghosts`).
+- **Modo práctica** (`session.practice`): los golpes no quitan corazones, son un "BONK!" (atributo `Bonks`). Si el
+  ala se queda casi parada más de 2 s (`PracticeStuckTime`), ayuda el viento a favor. Nadie se queda atascado.
+- **SKIP** en dúo: hace falta que lo pulsen los dos (`SkipVotes`), y se salta al nivel 1.
+- **Solo con el Coach**: la primera vez que alguien entra, mientras busca pareja, se le ofrece "Practice with the
+  Coach". Es el mismo nivel: el Coach (`TutorialBot`) hace su mitad y resbala una vez en el combo. Al terminar,
+  aterriza y vuelve al lobby.
+- Las indicaciones (`coach` en `TUTORIAL_LEVELS` de `MapBuilder`) se guardan en el atributo `Coach` del nivel.
+- No cuenta para estadísticas ni clasificación.
 
 ## Clasificación de dúos (tablón del lobby)
 
@@ -262,8 +262,9 @@ dos desde la salida; las pruebas con `DevStartLevel` y los vuelos en solitario n
 
 ## Balanceo, corrientes, anillos, plumas y obstáculos móviles
 
-- **Balanceo (impulso)**: mientras se mantiene Espacio (A / botón ⇑) el jugador se columpia en la barra y el ala
-  acelera: **+35 %** si se balancea uno, **+70 %** si se balancean los dos. Gasta la **energía** del dúo (barra bajo
+- **Balanceo (impulso)**: se presenta en el **nivel 6** (`PumpFromLevel`). Antes, y en Flight School, solo cuenta la
+  barra: la energía y el botón ⇑ no aparecen. Mientras se mantiene Espacio (A / botón ⇑) el jugador se columpia en
+  la barra y el ala acelera: **+35 %** si se balancea uno, **+70 %** si se balancean los dos. Gasta la **energía** del dúo (barra bajo
   los corazones; los dos a la vez ≈ 2,5 s), que se recarga planeando, con los **anillos azules** y en cada checkpoint.
   Más rápido = curvas más abiertas y golpes más fuertes: es un riesgo que se elige (y mejora el tiempo).
 - **Corrientes** (`ctx.updraft / downdraft / crosswind` en `MapBuilder`, zonas en `LevelNN.Wind`): la ascendente
@@ -276,10 +277,10 @@ dos desde la salida; las pruebas con `DevStartLevel` y los vuelos en solitario n
   abren y cierran (nunca del todo) y **aspas** giratorias (las esquinas quedan libres). Su posición es una función del
   reloj compartido: el servidor mueve colisionadores invisibles (`MoverService`) y cada cliente dibuja la copia
   visual con la misma fórmula (`MoverVisuals`), así se ven suaves y coinciden con lo que choca.
-- **Niveles**: capítulos 1-2 rehechos (≈ 200 × 150, más cortos y densos) y 3-5 al 75 % de sección, cada capítulo
-  con un elemento nuevo: anillos (2), plumas (3), corriente ascendente (4), troncos (7), viento lateral (9),
-  compuertas (13), corrientes que bajan (17), aspas (23). En los capítulos 6-10, `ctx.autoExtras` reparte 2-4
-  elementos por nivel según `CHAPTER_EXTRAS`. El tutorial tiene un 4.º tramo, **BOOST**.
+- **Niveles**: los capítulos 1-2 siguen la gramática de `docs/DISENO_NIVELES.md` (un nivel = una idea con
+  identidad). Los capítulos 3-5 van al 75 % de sección. En los capítulos 6-10, `ctx.autoExtras` reparte 2-4
+  elementos por nivel según `CHAPTER_EXTRAS`.
+- **Valles**: corto (~6 s) entre niveles de un mismo capítulo y largo (~10 s) al cambiar de capítulo.
 
 ## Sensación de vuelo (lo que perdona el juego)
 
@@ -347,7 +348,8 @@ python3 tools/sim/run.py drivers/audit.luau              # regla de oro (MapDres
 python3 tools/sim/run.py drivers/layout.luau             # trazado: extensión, separación entre filas y SVG
 python3 tools/sim/run.py drivers/leaderboard.luau        # DuoLeaderboard y PlayerStats (medallas, ajustes) con DataStores falsos
 python3 tools/sim/run.py drivers/tutorial.luau           # Map.Tutorial y el bot (indicaciones, rumbo, colocación)
-python3 tools/sim/run.py drivers/tutorialflight.luau     # vuela el tutorial con el bot (player=idle: sin moverse)
+python3 tools/sim/run.py drivers/tutorialflight.luau     # vuela Flight School con el Coach (player=full|lift|idle) o duo=true
+python3 tools/sim/run.py drivers/pacing.luau             # ritmo de cada nivel y cronología de los primeros 5 minutos
 python3 tools/sim/run.py drivers/selftest.luau           # pruebas de la propia imitación
 ```
 

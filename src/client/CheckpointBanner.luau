@@ -282,11 +282,11 @@ function CheckpointBanner.show(data: { [string]: any })
 
 	local chapter = if type(data.chapter) == "number" and not final then data.chapter else nil
 	band.BackgroundColor3 = color
-	title.Text = if final and tutorial then "TUTORIAL COMPLETE!" elseif final then "COURSE COMPLETE!" elseif chapter then string.format("CHAPTER %d CLEAR!", chapter) else "CHECKPOINT"
+	title.Text = if final and tutorial then "FLIGHT SCHOOL COMPLETE!" elseif final then "COURSE COMPLETE!" elseif chapter then string.format("CHAPTER %d CLEAR!", chapter) else "CHECKPOINT"
 	title.TextSize = if final or chapter then 54 else 64
 	titleStroke.Color = color:Lerp(Color3.new(0, 0, 0), 0.55)
 	subtitle.Text = if final and tutorial
-		then "You're ready to fly with a friend!"
+		then (if data.toLevelOne == true then "Now the real thing: Level 1!" else "Now find a wingmate!")
 		elseif final and time
 		then string.format("%d / %d LEVELS  ·  TIME %s", total, total, formatTime(time))
 		elseif final then string.format("%d / %d LEVELS  ·  Great flying, duo!", total, total)
@@ -369,7 +369,8 @@ function CheckpointBanner.show(data: { [string]: any })
 	end)
 
 	-- Salida por la derecha.
-	task.delay((if final then FINAL_HOLD_TIME else HOLD_TIME) + 0.3, function()
+	-- Flight School: salida corta (enseguida empieza el nivel 1 y su tarjeta de título).
+	task.delay((if final and not tutorial then FINAL_HOLD_TIME else HOLD_TIME) + 0.3, function()
 		if token ~= mine then
 			return
 		end

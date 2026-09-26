@@ -133,7 +133,7 @@ timerText.TextXAlignment = Enum.TextXAlignment.Right
 local titleCard = Instance.new("CanvasGroup")
 titleCard.AnchorPoint = Vector2.new(0.5, 0.5)
 titleCard.Position = UDim2.fromScale(0.5, 0.26)
-titleCard.Size = UDim2.fromOffset(560, 110)
+titleCard.Size = UDim2.fromOffset(560, 140)
 titleCard.BackgroundTransparency = 1
 titleCard.GroupTransparency = 1
 titleCard.Parent = gui
@@ -144,9 +144,14 @@ local cardTitle = text(titleCard, Enum.Font.GothamBold, 24, Color3.fromRGB(230, 
 cardTitle.Position = UDim2.fromOffset(0, 52)
 cardTitle.Size = UDim2.new(1, 0, 0, 30)
 stroke(cardTitle, 2, 0.35)
+-- Frase de identidad del nivel ("Who moves?", "Ride the wind up"…): dice de qué va sin explicar nada.
+local cardTagline = text(titleCard, Enum.Font.GothamBold, 22, Color3.fromRGB(255, 225, 120))
+cardTagline.Position = UDim2.fromOffset(0, 86)
+cardTagline.Size = UDim2.new(1, 0, 0, 28)
+stroke(cardTagline, 2, 0.3)
 local cardLine = Instance.new("Frame")
 cardLine.AnchorPoint = Vector2.new(0.5, 0)
-cardLine.Position = UDim2.new(0.5, 0, 0, 90)
+cardLine.Position = UDim2.new(0.5, 0, 0, 122)
 cardLine.Size = UDim2.fromOffset(180, 4)
 cardLine.BorderSizePixel = 0
 cardLine.Parent = titleCard
@@ -264,6 +269,24 @@ local function marker(color: Color3, caption: string): (Frame, TextLabel)
 	label.Text = caption
 	return dot, label
 end
+-- Marcas fantasma (Flight School): dónde tendría que estar cada uno. La tuya, más marcada y latiendo.
+local function ghost(color: Color3, thickness: number): Frame
+	local ring = Instance.new("Frame")
+	ring.AnchorPoint = Vector2.new(0.5, 0.5)
+	ring.Size = UDim2.fromOffset(34, 34)
+	ring.BackgroundTransparency = 1
+	ring.ZIndex = 2
+	ring.Visible = false
+	ring.Parent = bar
+	corner(ring, UDim.new(1, 0))
+	local line = Instance.new("UIStroke")
+	line.Color = color
+	line.Thickness = thickness
+	line.Parent = ring
+	return ring
+end
+local myGhost = ghost(ME_COLOR, 4)
+local partnerGhost = ghost(PARTNER_COLOR, 2.5)
 local meDot = marker(ME_COLOR, "YOU")
 local partnerDot = marker(PARTNER_COLOR, "PARTNER")
 meDot.ZIndex = 4
@@ -330,7 +353,8 @@ local lastCountdown = -1
 local shownHearts = Config.WingHearts
 local blinkClock = 0
 local CARD_TIME = 5 -- s que la tarjeta de nivel se ve entera antes de encogerse
-local lastLevel = -1
+local lastLevel = "" -- recorrido + nivel (Flight School y el nivel 1 son los dos "1")
+local introText, introUntil = "", 0 -- aviso de novedad del nivel (p. ej. el impulso), unos segundos
 local cardExpanded = true
 local cardExpandUntil = 0
 local titleToken = 0
@@ -345,17 +369,18 @@ local function setCardExpanded(expanded: boolean)
 	levelText.TextSize = if expanded then 22 else 18
 end
 
--- "LEVEL NN · título": aparece, se queda un momento y se va.
-local function showTitleCard(level: number, title: string, color: Color3)
+-- "LEVEL NN · título · frase": aparece, se queda un momento y se va.
+local function showTitleCard(heading: string, title: string, tagline: string, color: Color3)
 	titleToken += 1
 	local mine = titleToken
-	cardLevel.Text = string.format("LEVEL %02d", level)
+	cardLevel.Text = heading
 	cardTitle.Text = title
+	cardTagline.Text = tagline
 	cardLine.BackgroundColor3 = color
 	titleCard.GroupTransparency = 1
 	titleCard.Position = UDim2.fromScale(0.5, 0.28)
 	TweenService:Create(titleCard, TweenInfo.new(0.35, Enum.EasingStyle.Quad), { GroupTransparency = 0, Position = UDim2.fromScale(0.5, 0.26) }):Play()
-	task.delay(2.2, function()
+	task.delay(2.8, function()
 		if titleToken == mine then
 			TweenService:Create(titleCard, TweenInfo.new(0.5, Enum.EasingStyle.Quad), { GroupTransparency = 1 }):Play()
 		end
@@ -383,7 +408,7 @@ function FlightHud.update(glider: Model?, side: number, dt: number)
 	gui.Enabled = glider ~= nil and side ~= 0
 	if not glider or side == 0 then
 		lastState, lastCountdown = nil, -1
-		lastLevel = -1
+		lastLevel = ""
 		return
 	end
 
@@ -393,16 +418,28 @@ function FlightHud.update(glider: Model?, side: number, dt: number)
 	local accentColor = if typeof(color) == "Color3" then color else DEFAULT_ACCENT
 	accent.BackgroundColor3 = accentColor
 	fill.BackgroundColor3 = accentColor
-	levelText.Text = string.format('LEVEL %02d <font size="15" color="#b4bece">/ %02d</font>', level, total)
+	local school = glider:GetAttribute("Tutorial") == true
+	levelText.Text = if school then "FLIGHT SCHOOL" else string.format('LEVEL %02d <font size="15" color="#b4bece">/ %02d</font>', level, total)
 	local title = glider:GetAttribute("LevelTitle")
 	titleText.Text = if type(title) == "string" then title else ""
+	local taglineValue = glider:GetAttribute("LevelTagline")
+	local tagline: string = if type(taglineValue) == "string" then taglineValue else ""
 	-- Nivel nuevo: tarjeta grande en el centro y la de arriba se ve entera unos segundos.
-	if level ~= lastLevel and level > 0 then
-		lastLevel = level
+	local levelKey = (if school then "T" else "M") .. level
+	if levelKey ~= lastLevel and level > 0 then
+		lastLevel = levelKey
 		cardExpandUntil = os.clock() + CARD_TIME
 		setCardExpanded(true)
 		if glider:GetAttribute("Completed") ~= true then
-			showTitleCard(level, titleText.Text, accentColor)
+			if school then
+				showTitleCard("FLIGHT SCHOOL", tagline, "", accentColor)
+			else
+				showTitleCard(string.format("LEVEL %02d", level), titleText.Text, tagline, accentColor)
+			end
+			local intro = glider:GetAttribute("LevelIntro")
+			if type(intro) == "string" and intro ~= "" then
+				introText, introUntil = intro, os.clock() + 5
+			end
 		end
 	end
 	setCardExpanded(os.clock() < cardExpandUntil)
@@ -443,7 +480,7 @@ function FlightHud.update(glider: Model?, side: number, dt: number)
 	local energy = if glider:GetAttribute("Energy") == nil then 1 else number(glider, "Energy")
 	energyFill.Size = UDim2.fromScale(math.clamp(energy, 0, 1), 1)
 	energyFill.BackgroundColor3 = if energy < 0.2 then Color3.fromRGB(255, 120, 90) else Color3.fromRGB(90, 210, 255)
-	energyTrack.Visible = state ~= "Landed"
+	energyTrack.Visible = state ~= "Landed" and glider:GetAttribute("PumpEnabled") ~= false
 	local boost = number(glider, "Boost")
 	local boostLevel = if boost >= Config.PumpBoostBoth - 0.01 then 2 elseif boost > 0.01 then 1 else 0
 	if boostLevel ~= lastBoostLevel then
@@ -468,6 +505,19 @@ function FlightHud.update(glider: Model?, side: number, dt: number)
 	local theirAxis = number(glider, if side < 0 then "RightAxis" else "LeftAxis")
 	local myPump = glider:GetAttribute(if side < 0 then "LeftPump" else "RightPump") == true
 	local theirPump = glider:GetAttribute(if side < 0 then "RightPump" else "LeftPump") == true
+	-- Marcas fantasma (solo en Flight School, las publica el servidor).
+	local ghostMine = glider:GetAttribute(if side < 0 then "GhostLeft" else "GhostRight")
+	local ghostTheirs = glider:GetAttribute(if side < 0 then "GhostRight" else "GhostLeft")
+	myGhost.Visible = type(ghostMine) == "number"
+	if type(ghostMine) == "number" then
+		myGhost.Position = UDim2.fromScale(0.5 + math.clamp(ghostMine, -1, 1) * 0.5, 0.5)
+		local pulse = 34 + math.sin(os.clock() * 8) * 4
+		myGhost.Size = UDim2.fromOffset(pulse, pulse)
+	end
+	partnerGhost.Visible = hasPartner and type(ghostTheirs) == "number"
+	if type(ghostTheirs) == "number" then
+		partnerGhost.Position = UDim2.fromScale(0.5 + math.clamp(ghostTheirs, -1, 1) * 0.5, 0.5)
+	end
 	meArrow.Text = if myPump then "⇑" .. arrowFor(myAxis) else arrowFor(myAxis)
 	partnerArrow.Text = if theirPump then "⇑" .. arrowFor(theirAxis) else arrowFor(theirAxis)
 
@@ -526,6 +576,8 @@ function FlightHud.update(glider: Model?, side: number, dt: number)
 		lastCountdown = -1
 		if glider:GetAttribute("Completed") and not glider:GetAttribute("Tutorial") then
 			toast.Text, toast.TextColor3 = "FINISH! Glide down and land on the island", CLIMB_COLOR
+		elseif os.clock() < introUntil then
+			toast.Text, toast.TextColor3 = introText, Color3.fromRGB(90, 210, 255)
 		else
 			toast.Text = ""
 		end

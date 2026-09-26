@@ -1,8 +1,11 @@
--- Vuela el tutorial con el bot de verdad (TutorialBot.steer/step) y un jugador simulado, con las mismas
--- ecuaciones y detección de choque que FlightTester / GliderSession, con las indicaciones reales (resbalones).
--- El bot solo hace su mitad. ARGS.player = "full" (por defecto: hace su mitad de subir/bajar y de girar, y
--- compensa los resbalones), "lift" (solo sube y baja: el ala gira a medias y los resbalones la desvían) o
--- "idle" (no se mueve nunca: tiene que chocar).
+-- Vuela Flight School como en el juego: modo práctica (tocar no quita corazones; golpe fuerte = "bonk"), viento a
+-- favor si se atascan contra algo más de Config.PracticeStuckTime, indicaciones y marcas fantasma reales.
+--   duo=true: los dos jugadores siguen su marca fantasma (con reacción); al cruzar la salida pasarían al nivel 1.
+--   por defecto: un jugador con el Coach (TutorialBot hace su mitad) y ARGS.player:
+--     "full" (sigue su fantasma y compensa el resbalón del Coach) · "lift" (solo sube y baja: gira a medias) ·
+--     "idle" (no se mueve nunca: sin la ayuda del atasco no pasaría ni el primer tramo).
+--   Con el Coach, tras la meta se sigue volando hasta aterrizar, chocar o agotar FinishLandTimeout.
+-- Informe: tiempo hasta la salida, bonks, veces que ayudó el viento a favor y desvío máximo de la línea ideal.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Config = require(ReplicatedStorage.Glider.GliderConfig)
 local GliderMath = require(ReplicatedStorage.Glider.GliderMath)
@@ -18,133 +21,130 @@ template.Parent = workspace
 local SPAN, WING_TOP = 32, 4
 
 local MapBuilder = require(game.ServerScriptService.Glider.DevTools.MapBuilder:Clone())
-MapBuilder.build({ dress = ARGS.dress ~= false })
+MapBuilder.build({ dress = ARGS.dress == true })
 local tutorial = workspace.Map.Tutorial
 local Checkpoints = require(game.ServerScriptService.Glider.Checkpoints)
 local TutorialBot = require(game.ServerScriptService.Glider.TutorialBot)
 local course = Checkpoints.new(tutorial)
-local tutorialCues = {}
-for index = 1, course:count() do
-	tutorialCues[index] = TutorialBot.cuesOf(tutorial:FindFirstChild(string.format("Level%02d", index)))
-end
+local cues = TutorialBot.cuesOf(tutorial.Level01)
 
 local params = RaycastParams.new()
 params.FilterDescendantsInstances = { template }
 local DT = 1 / 60
 local inner, outer = Config.BarInnerOffset, Config.BarOuterOffset
-local mode = ARGS.player or "full"
+local duo = ARGS.duo == true
+local mode = if duo then "duo" else (ARGS.player or "full")
+local REACTION = 0.45
 
 local launch = tutorial.StartIsland.LaunchPoint.CFrame
 local pos = launch.Position
-local look = launch.LookVector
-local state = GliderPhysics.newState(GliderMath.yawOf(look))
+local state = GliderPhysics.newState(GliderMath.yawOf(launch.LookVector))
+local health = GliderPhysics.newHealth()
 local dims = { span = SPAN, wingTop = WING_TOP }
 local slots = {
-	[-1] = { rig = true, position = -(inner + Config.StartOutward * (outer - inner)), axis = 0, velocity = 0 },
-	[1] = { rig = true, position = inner + Config.StartOutward * (outer - inner), axis = 0, velocity = 0 },
+	[-1] = { rig = true, position = -(inner + Config.StartOutward * (outer - inner)), axis = 0, velocity = 0, pending = {} },
+	[1] = { rig = true, position = inner + Config.StartOutward * (outer - inner), axis = 0, velocity = 0, pending = {} },
 }
-local checkpoint, t, result = 0, 0, "OK"
-local pending = {}
-local maxAbsBalance = 0
-local maxOff = {} -- mayor distancia lateral a la línea ideal en cada tramo
+local t, result = 0, "NO LLEGA"
+local bonks, assists = 0, 0
+local stuck, clean, windAssist = 0, 0, false
+local maxOff = 0
 local previous = pos
-local finishedAt = nil -- t al cruzar la meta: desde ahí hay que aterrizar (o salta FinishLandTimeout)
+local finishedAt: number? = nil
 
-while t < 200 do
+-- Un jugador simulado va hacia `goal` (posición en la barra) con retraso de reacción.
+local function follow(slot, goal: number)
+	table.insert(slot.pending, { at = t + REACTION, goal = goal })
+	while #slot.pending > 1 and slot.pending[2].at <= t do
+		table.remove(slot.pending, 1)
+	end
+	local order = slot.pending[1]
+	if order.at <= t then
+		local d = order.goal - slot.position
+		slot.axis = if math.abs(d) > 0.3 then math.sign(d) else 0
+	end
+end
+
+while t < 150 do
 	t += DT
-	local level = math.clamp(checkpoint + 1, 1, course:count())
 	local forward = GliderPhysics.forwardOf(state.yaw)
-	-- Jugador (0.4 s de reacción), en su lado: su mitad de subir/bajar y, en "full", también de girar. En los
-	-- resbalones del bot, "full" mira cuánto se desvía el ala y compensa inclinándose (como una persona).
-	local cues = tutorialCues[level]
-	local goal = course:lookahead(level, pos, 100)
-	local progressNow = course:progress(level, pos)
-	if mode ~= "idle" then
-		local lift = TutorialBot.liftFor(pos, goal, state.speed)
-		local steerNeed = if mode == "full" then TutorialBot.steer(pos, forward, goal) else 0
-		local out = math.clamp(lift + steerNeed / 2, 0, 1)
-		if mode == "full" then
-			for _, cue in cues do
-				if cue.drift and progressNow >= cue.from and progressNow < cue.to then
-					-- Compensar el resbalón: además de su mitad, pone la mitad que el bot no pone.
-					out = math.clamp(lift + steerNeed, 0, 1)
-				end
-			end
-		end
-		table.insert(pending, { at = t + 0.4, goal = -(inner + out * (outer - inner)) })
-		while #pending > 1 and pending[2].at <= t do
-			table.remove(pending, 1)
-		end
-		local order = pending[1]
-		if order.at <= t then
-			local d = order.goal - slots[-1].position
-			slots[-1].axis = if math.abs(d) > 0.3 then math.sign(d) else 0
-		end
+	local progress = course:progress(1, pos)
+	local goal = course:lookahead(1, pos, TutorialBot.LOOKAHEAD)
+	local balance = TutorialBot.steer(pos, forward, goal)
+	local lift = TutorialBot.liftFor(pos, goal, state.speed)
+	local cue = TutorialBot.activeCue(cues, "Flying", progress)
+	local ghostLeft, ghostRight = TutorialBot.ghosts(lift, balance)
+	if finishedAt then
+		ghostLeft, ghostRight = TutorialBot.ghosts(0.15, 0) -- aterrizar: los dos al centro
 	end
-	-- Bot.
-	local progress = course:progress(level, pos)
-	local onLine = course:lookahead(level, pos, 0)
-	if onLine and progress > 0.02 and progress < 0.98 then -- solo dentro del corredor (no en el valle)
-		maxOff[level] = math.max(maxOff[level] or 0, ((pos - onLine) * Vector3.new(1, 0, 1)).Magnitude)
+	-- Jugador izquierdo (el humano).
+	if mode == "full" or mode == "duo" then
+		local target = ghostLeft
+		if cue and cue.drift and not duo then
+			-- Compensar el resbalón del Coach: pone también la mitad de giro que el Coach no pone.
+			target = -(inner + math.clamp(lift + balance, 0, 1) * (outer - inner))
+		end
+		follow(slots[-1], target)
+	elseif mode == "lift" then
+		follow(slots[-1], -(inner + math.clamp(lift, 0, 1) * (outer - inner)))
 	end
-	local botGoal = course:lookahead(level, pos, TutorialBot.LOOKAHEAD)
-	local balance = TutorialBot.steer(pos, forward, botGoal)
-	TutorialBot.step(slots, "Flying", cues, progress, balance, TutorialBot.liftFor(pos, botGoal, state.speed), t, finishedAt ~= nil)
+	-- Jugador derecho: el segundo humano (dúo) o el Coach.
+	if duo then
+		follow(slots[1], ghostRight)
+	else
+		TutorialBot.step(slots, cue, balance, lift, t, finishedAt ~= nil)
+	end
 	for _, slot in slots do
 		slot.velocity = GliderMath.approach(slot.velocity, slot.axis * Config.PlayerSlideSpeed, Config.PlayerSlideResponse, DT)
 		slot.position = math.clamp(slot.position + slot.velocity * DT, -outer, outer)
 	end
-	-- Mismo cálculo que GliderSession._computeInputs / _fly.
-	local a, b = slots[-1].position, slots[1].position
-	local liftInput, balanceInput = GliderPhysics.inputs(a, b)
-	maxAbsBalance = math.max(maxAbsBalance, math.abs(balanceInput))
-	GliderPhysics.step(state, liftInput, balanceInput, DT, GliderPhysics.ceilingLimit(state, pos, dims, params), -math.huge, 0)
-	local velocity = GliderPhysics.velocity(state)
-	local rootCFrame = GliderPhysics.cframe(state, pos)
-	-- Choque.
-	if workspace:Raycast(pos, Vector3.new(0, -(Config.FeetBelowRoot + Config.GroundClearance), 0), params) then
-		if finishedAt then
-			result = string.format("META en %.1f s · ATERRIZA %.1f s después (vuelta al lobby)", finishedAt, t - finishedAt)
+	local liftInput, balanceInput = GliderPhysics.inputs(slots[-1].position, slots[1].position)
+
+	-- Viento a favor del atasco (como GliderSession en modo práctica).
+	local assistTurn, windVertical = 0, 0
+	if windAssist and goal then
+		assistTurn = GliderPhysics.pursuitTurn(pos, forward, goal, state.speed) * Config.WindAssistTurnFraction
+		windVertical = math.clamp((goal.Y - pos.Y) * 0.5, -Config.PracticeAssistVertical, Config.PracticeAssistVertical)
+	end
+	local flown = GliderPhysics.fly(state, health, liftInput, balanceInput, pos, dims, DT, params, {
+		now = t,
+		assistTurn = assistTurn,
+		windVertical = windVertical,
+		landing = finishedAt ~= nil,
+		practice = true,
+	})
+	if flown.landed then
+		result = string.format("META en %.1f s · ATERRIZA %.1f s después", finishedAt or 0, t - (finishedAt or t))
+		break
+	end
+	if flown.event == "bonk" then
+		bonks += 1
+	end
+	stuck = if state.speed < Config.ForwardSpeed * 0.5 then stuck + DT else 0
+	clean = if flown.contact then 0 else clean + DT
+	if stuck > Config.PracticeStuckTime and not windAssist then
+		windAssist = true
+		assists += 1
+	elseif windAssist and clean > 3 then
+		windAssist = false
+	end
+	local onLine = course:lookahead(1, pos, 0)
+	if onLine and progress > 0.02 and progress < 0.98 and not finishedAt then
+		maxOff = math.max(maxOff, ((pos - onLine) * Vector3.new(1, 0, 1)).Magnitude)
+	end
+	pos += flown.velocity * DT
+	local crossed = course:crossed(previous, pos, if finishedAt then 1 else 0)
+	if crossed and crossed.final and not finishedAt then
+		finishedAt = t
+		if duo then
+			result = string.format("SALIDA en %.1f s (→ nivel 1)", t)
 			break
-		end
-		local exitCF = tutorial[string.format("Level%02d", level)].Exit.CFrame
-		local rel = exitCF:PointToObjectSpace(pos)
-		result = string.format("CHOQUE con el suelo en el tramo %d (%.0f%%) · respecto a la salida: lateral %.0f, alto %.0f, delante %.0f", level, progress * 100, rel.X, rel.Y, -rel.Z)
-		break
-	end
-	local center = rootCFrame * CFrame.new(0, (WING_TOP - Config.FeetBelowRoot) / 2, 0)
-	local hit = workspace:Blockcast(center, Vector3.new(SPAN, WING_TOP + Config.FeetBelowRoot, 2), velocity.Unit * (velocity.Magnitude * DT + Config.ObstacleProbeDistance), params)
-	if hit and hit.Normal.Y >= -0.5 and finishedAt then
-		result = string.format("META en %.1f s · choca tras la meta a los %.1f s (vuelta al lobby)", finishedAt, t - finishedAt)
-		break
-	end
-	if hit and hit.Normal.Y >= -0.5 then
-		local exitCF = tutorial[string.format("Level%02d", level)].Exit.CFrame
-		local rel = exitCF:PointToObjectSpace(pos)
-		result = string.format("CHOQUE en el tramo %d (%.0f%%) contra %s · respecto a la salida: lateral %.0f, alto %.0f, delante %.0f", level, progress * 100, hit.Instance:GetFullName(), rel.X, rel.Y, -rel.Z)
-		break
-	end
-	if ARGS.trace and math.floor(t * 60) % 60 == 0 then
-		local exitCF = tutorial[string.format("Level%02d", level)].Exit.CFrame
-		local rel = exitCF:PointToObjectSpace(pos)
-		print(string.format("t=%4.1f lateral %6.1f alto %6.1f · jugador %.2f bot %.2f · balance %.2f deseado %.2f · yaw %.1f", t, rel.X, rel.Y, a, b, balanceInput, balance, math.deg(state.yaw)))
-	end
-	pos += velocity * DT
-	local crossed = course:crossed(previous, pos, checkpoint)
-	if crossed then
-		checkpoint = crossed.index
-		if crossed.final then
-			finishedAt = t
 		end
 	end
 	previous = pos
 	if finishedAt and t - finishedAt >= Config.FinishLandTimeout then
-		result = string.format("META en %.1f s · SIN ATERRIZAR en %d s (vuelta al lobby por tiempo)", finishedAt, Config.FinishLandTimeout)
+		result = string.format("META en %.1f s · sin aterrizar en %d s (vuelta al lobby por tiempo)", finishedAt, Config.FinishLandTimeout)
 		break
 	end
 end
-local offs = {}
-for index = 1, course:count() do
-	table.insert(offs, string.format("%.0f", maxOff[index] or 0))
-end
-print(string.format("jugador=%s · %s · tramos superados %d · balance máx %.2f · desvío máx por tramo %s", mode, result, checkpoint, maxAbsBalance, table.concat(offs, "/")))
+print(string.format("jugador=%s · %s · bonks %d · viento a favor %d · desvío máx %.0f", mode, result, bonks, assists, maxOff))

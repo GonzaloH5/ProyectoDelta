@@ -161,7 +161,7 @@ end
 
 local current: Model? = nil
 local parts: { BasePart } = {}
-local lastImpacts, lastRespawns, lastRings = 0, 0, 0
+local lastImpacts, lastRespawns, lastRings, lastBonks = 0, 0, 0, 0
 local hiddenFeathers: { BasePart } = {}
 local lastState: string? = nil
 local lastCount = -1
@@ -209,7 +209,7 @@ end
 local function mount(glider: Model)
 	clear()
 	current = glider
-	lastImpacts, lastRespawns, lastRings = number(glider, "Impacts"), number(glider, "Respawns"), number(glider, "Rings")
+	lastImpacts, lastRespawns, lastRings, lastBonks = number(glider, "Impacts"), number(glider, "Respawns"), number(glider, "Rings"), number(glider, "Bonks")
 	lastState, lastCount = nil, -1
 	for _, part in glider:GetDescendants() do
 		if part:IsA("BasePart") and part.Name ~= "Root" and part.Transparency < 1 then
@@ -336,6 +336,14 @@ function FlightEffects.update(glider: Model?, dt: number)
 		FlightAudio.play("Impact")
 	end
 	lastImpacts = impacts
+	-- "Bonk" en Flight School (modo práctica): el mismo golpe, pero sin corazón perdido.
+	local bonks = number(glider, "Bonks")
+	if bonks > lastBonks then
+		local contact = glider:GetAttribute("ContactPoint")
+		sparks(if typeof(contact) == "Vector3" then contact else root.Position, 30)
+		FlightAudio.play("Impact")
+	end
+	lastBonks = bonks
 
 	-- Anillo de impulso: destello azul y sonido.
 	local rings = number(glider, "Rings")
