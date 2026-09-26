@@ -46,7 +46,7 @@ local WALL_T = 24 -- grosor de paredes
 local SLAB_T = 8 -- grosor de suelo y techo
 local RIM = 60 -- las paredes sobresalen por encima del techo: se lee como cañón
 local STEP = 20 -- resolución del trazado
-local CORRIDOR_SCALE = 0.75 -- capítulos 3-5: sección del corredor al 75 % (más sensación de velocidad)
+local CORRIDOR_SCALE = 0.75 -- capítulo 5: sección del corredor al 75 % (más sensación de velocidad)
 -- Capítulos 6-10: elementos nuevos que MapBuilder reparte solo en cada nivel (ctx.autoExtras), además de los
 -- obstáculos escritos a mano. Un nivel puede cambiar cuántos (extraCount) o saltarse alguno (skipExtras).
 local CHAPTER_EXTRAS: { [number]: { string } } = {
@@ -667,8 +667,9 @@ local function makeContext(level: Model, frames, marks, scale: number?)
 	end
 
 	-- ASPAS: n aspas giran alrededor del eje del corredor; las esquinas quedan siempre libres (por ahí va la
-	-- línea ideal, lado `pass` = -1/+1 y abajo) y el centro hay que cronometrarlo.
-	function ctx.spinner(s, blades, period, pass, phase, size)
+	-- línea ideal, lado `pass` = -1/+1 y abajo) y el centro hay que cronometrarlo. inset = distancia de la línea
+	-- ideal a las paredes (26 por defecto; más, con aspas cortas, para no pasar rozando la pared).
+	function ctx.spinner(s, blades, period, pass, phase, size, inset)
 		local f = at(s)
 		local radius = math.min(f.width, f.height) / 2 * (size or 0.65)
 		for i = 1, blades do
@@ -676,7 +677,7 @@ local function makeContext(level: Model, frames, marks, scale: number?)
 			blade.Color = Color3.fromRGB(220, 70, 60)
 			blade.Material = Enum.Material.Metal
 		end
-		ctx.point(s, (pass or 1) * (f.width / 2 - 26), -(f.height / 2 - 22))
+		ctx.point(s, (pass or 1) * (f.width / 2 - (inset or 26)), -(f.height / 2 - (inset or 26) + 4))
 	end
 
 	-- ANILLO DE IMPULSO en (s, u, v): cruzarlo da energía y un empujón. Aro azul circular de diámetro size
@@ -1187,248 +1188,333 @@ local LEVELS = {
 		end,
 	},
 
-	-- ── Capítulo 3 · Bosque otoñal (11-15): giros largos y colinas ─────────
-	-- 11 y 12 dan la vuelta al recorrido (90° + 90° a la izquierda): la fila siguiente vuelve hacia -X.
-	{ -- 11: primer giro largo: 90° a la izquierda en dos curvas amplias, con una colina entre ellas.
-		title = "Autumn Bend",
-		width = 280,
-		height = 210,
-		path = {
-			{ kind = "straight", length = 300 },
-			{ kind = "arc", angle = 45, radius = 520 },
-			{ kind = "mark", name = "hill" },
-			{ kind = "straight", length = 720 },
-			{ kind = "arc", angle = 45, radius = 520 },
-			{ kind = "straight", length = 300 },
-		},
-		features = function(c)
-			c.guide(300 + 204, 0, 0)
-			c.feathers(300 + 60, 300 + 360, 5, -30, -10, -45, -10)
-			c.boostRing(c.mark("hill") + 150, 30, 0)
-			c.ridge(c.mark("hill") + 400, 15, 18, 25)
-			c.feathers(c.mark("hill") + 360, c.mark("hill") + 440, 3, 0, 45, 0, 45)
-			c.guide(300 + 408 + 720 + 204, 0, 0)
-		end,
-	},
-	{ -- 12: colinas seguidas (una detrás de otra) y el segundo giro de 90°.
-		title = "Rolling Hills",
-		width = 280,
-		height = 210,
+	-- ── Capítulo 3 · Bosque otoñal (11-15): "Ritmo" ─────────────────────────
+	-- Practicar lo del capítulo 1 más rápido y combinado: girar subiendo y bajando (se mueve uno solo, y en cada
+	-- nivel le toca a uno), compuertas que abren y cierran (nuevo: el impulso ayuda a llegar a tiempo) y
+	-- combinaciones seguidas. 11 y 12 dan la vuelta al recorrido (90° + 90° a la izquierda): la fila siguiente
+	-- vuelve hacia -X.
+	{ -- 11 · Falling Leaves — la espiral que baja. 90° a la izquierda bajando en tres curvas, con ventanas abajo y
+		-- por dentro: bajar girando a la izquierda lo hace el de la DERECHA (se mete al centro), el otro aguanta.
+		-- Final: muro para salir de la espiral ("¡ahora los dos fuera!"), anillo y ventana abajo-derecha (le toca al otro).
+		title = "Falling Leaves",
+		tagline = "Spiral down together",
+		width = 200,
+		height = 170,
 		path = {
 			{ kind = "straight", length = 250 },
-			{ kind = "arc", angle = 45, radius = 560 },
-			{ kind = "mark", name = "hills" },
-			{ kind = "straight", length = 1900 },
-			{ kind = "arc", angle = 45, radius = 560 },
-			{ kind = "straight", length = 250 },
+			{ kind = "mark", name = "a1" },
+			{ kind = "arc", angle = 30, radius = 260, rise = -50 },
+			{ kind = "straight", length = 160, rise = -20 },
+			{ kind = "mark", name = "a2" },
+			{ kind = "arc", angle = 30, radius = 260, rise = -50 },
+			{ kind = "straight", length = 160, rise = -20 },
+			{ kind = "mark", name = "a3" },
+			{ kind = "arc", angle = 30, radius = 260, rise = -50 },
+			{ kind = "mark", name = "out" },
+			{ kind = "straight", length = 1070 },
 		},
 		features = function(c)
-			local a = c.mark("hills")
-			c.ridge(a + 420, 10, 18, 22)
-			c.feathers(a + 620, a + 800, 4, 0, -35, 0, -35)
-			c.ridge(a + 1000, 12, 18, 22)
-			c.boostRing(a + 1250, 0, -25)
-			c.ridge(a + 1580, 15, 18, 22)
+			local q = 260 * math.rad(30) / 2 -- media curva
+			c.window(c.mark("a1") + q, -40, -25, 120, 90) -- abajo-izquierda: el derecho al centro
+			c.feathers(c.mark("a1") + 2 * q + 30, c.mark("a1") + 2 * q + 130, 3, -30, -20, -30, -20)
+			c.window(c.mark("a2") + q, -40, -25, 115, 88)
+			c.window(c.mark("a3") + q, 0, -30, 120, 90) -- abajo, recto: los dos al centro
+			local out = c.mark("out")
+			c.barrier(out + 330, 5, 35) -- salir de la espiral
+			c.boostRing(out + 580, 0, 25)
+			c.window(out + 820, 40, -25, 120, 90) -- abajo-derecha: ahora el IZQUIERDO al centro
 		end,
 	},
-	{ -- 13: túnel bajo (techo a 150) con curvas suaves: poco margen para subir o bajar.
+	{ -- 12 · Thermals — térmicas en la curva. Otros 90° a la izquierda subiendo: antes de cada muro alto hay una
+		-- columna ascendente (una por dentro, otra por fuera, otra en medio); sin ella el muro no se sube. Girar y
+		-- meterse en la columna, abrirse los dos. Final: ventana arriba-izquierda (ahora trabaja el IZQUIERDO).
+		title = "Thermals",
+		tagline = "Catch the rising air",
+		width = 210,
+		height = 190,
+		path = {
+			{ kind = "straight", length = 360 },
+			{ kind = "mark", name = "t1" },
+			{ kind = "straight", length = 320, rise = 60 },
+			{ kind = "arc", angle = 45, radius = 300 },
+			{ kind = "mark", name = "t2" },
+			{ kind = "straight", length = 320, rise = 60 },
+			{ kind = "arc", angle = 45, radius = 300 },
+			{ kind = "mark", name = "t3" },
+			{ kind = "straight", length = 320, rise = 70 },
+			{ kind = "mark", name = "fin" },
+			{ kind = "straight", length = 450 },
+		},
+		features = function(c)
+			local t1, t2, t3 = c.mark("t1"), c.mark("t2"), c.mark("t3")
+			c.updraft(t1 + 20, 220, 18, -55, 90) -- por dentro (izquierda)
+			c.point(t1 + 60, -55, 10)
+			c.barrier(t1 + 280, 45, 30)
+			c.updraft(t2, 250, 18, 45, 100) -- por fuera (derecha)
+			c.point(t2 + 90, 45, 10)
+			c.barrier(t2 + 290, 38, 30)
+			c.updraft(t3 + 10, 240, 18, 0, 100)
+			c.barrier(t3 + 280, 45, 30)
+			c.window(c.mark("fin") + 250, -40, 25, 120, 90) -- arriba-izquierda: el izquierdo fuera
+		end,
+	},
+	{ -- 13 · Forest Gates — compuertas (nuevo). Se abren y cierran; en el centro siempre queda hueco, pero más
+		-- abierto si se llega a tiempo (el impulso ayuda: "¡a la vez, que se cierra!"). Compuerta + viga, dos
+		-- compuertas desfasadas y una compuerta justo al salir de una S. Final: el doble ritmo.
 		title = "Forest Gates",
-		width = 260,
-		height = 210,
+		tagline = "Through the gaps, on time",
+		intro = "NEW: gates open and close. Time it (or boost)!",
+		width = 210,
+		height = 170,
 		path = {
 			{ kind = "straight", length = 250 },
-			{ kind = "straight", length = 250, height = 150 },
-			{ kind = "arc", angle = 30, radius = 420 },
-			{ kind = "arc", angle = -30, radius = 420 },
-			{ kind = "mark", name = "low" },
-			{ kind = "straight", length = 500 },
-			{ kind = "arc", angle = -30, radius = 420 },
-			{ kind = "arc", angle = 30, radius = 420 },
-			{ kind = "straight", length = 250, height = 210 },
-			{ kind = "straight", length = 200 },
+			{ kind = "mark", name = "a" },
+			{ kind = "straight", length = 900 },
+			{ kind = "arc", angle = 40, radius = 200 },
+			{ kind = "arc", angle = -40, radius = 200 },
+			{ kind = "mark", name = "b" },
+			{ kind = "straight", length = 700 },
 		},
 		features = function(c)
-			-- Compuertas (nuevo): en el centro siempre hay hueco; más abierto si se llega a tiempo.
-			c.gate(c.mark("low") + 90, 70, nil, 4)
-			c.lintel(c.mark("low") + 320, 8)
-			c.feathers(c.mark("low") + 380, c.mark("low") + 470, 3, 30, 0, 30, 0)
+			local a = c.mark("a")
+			c.gate(a + 150, 95, nil, 4) -- presentar: hueco mínimo generoso
+			c.gate(a + 430, 82, nil, 3.6, 0.3)
+			c.lintel(a + 680, 10, 35)
+			c.boostRing(a + 830, 0, 20)
+			local b = c.mark("b")
+			c.gate(b + 150, 80, nil, 3.6, 0.5) -- justo al salir de la S
+			c.feathers(b + 220, b + 300, 3, 0, 0, 0, 0)
+			c.gate(b + 380, 80, nil, 3.6, 0)
+			c.barrier(b + 620, 5, 35)
 		end,
 	},
-	{ -- 14: slalom más rápido y más justo: salientes de 100 cada 330 en 250 de ancho, curva suave al final.
-		title = "Leaf Slalom",
-		width = 250,
-		height = 210,
+	{ -- 14 · Rollercoaster — todo a la vez. Pilar, viga, pilar, muro, rampa, ventana: cada ~4 s un gesto distinto
+		-- (izquierda, abajo, derecha, arriba, surf, abajo-derecha). Final: la ventana tras la rampa y una S
+		-- comprometida ("¡CAMBIO!").
+		title = "Rollercoaster",
+		tagline = "Up, down, left, right!",
+		width = 230,
+		height = 180,
 		path = {
-			{ kind = "straight", length = 300 },
-			{ kind = "mark", name = "slalom" },
-			{ kind = "straight", length = 1600 },
-			{ kind = "arc", angle = 25, radius = 450 },
-			{ kind = "arc", angle = -25, radius = 450 },
-			{ kind = "straight", length = 300 },
+			{ kind = "straight", length = 250 },
+			{ kind = "mark", name = "a" },
+			{ kind = "straight", length = 1540 },
+			{ kind = "arc", angle = 50, radius = 120 },
+			{ kind = "arc", angle = -50, radius = 120 },
+			{ kind = "straight", length = 220 },
 		},
 		features = function(c)
-			local a = c.mark("slalom")
-			c.promontory(a + 250, -1, 100)
-			c.promontory(a + 580, 1, 100)
-			c.promontory(a + 910, -1, 100)
-			c.promontory(a + 1240, 1, 100)
-			c.feathers(a + 400, a + 440, 2, 20, 0, 20, 0)
-			c.gate(a + 1450, 75, nil, 3.6, 0.3)
+			local a = c.mark("a")
+			c.pillar(a + 100, 40, 60, -1)
+			c.lintel(a + 340, 10, 35)
+			c.pillar(a + 570, -40, 60, 1)
+			c.barrier(a + 860, 5, 35)
+			c.ridge(a + 1110, 8, 20, 25) -- rampa: surf
+			c.feathers(a + 1090, a + 1130, 2, 0, 45, 0, 45)
+			c.window(a + 1360, 40, -25, 120, 90) -- abajo-derecha: el izquierdo al centro
+			c.boostRing(a + 1480, 0, 20)
 		end,
 	},
-	{ -- 15: prueba del capítulo: giro largo, colinas, túnel bajo y slalom.
+	{ -- 15 · Autumn Trial (prueba del capítulo) — espiral abajo a la derecha y arriba a la izquierda (ventanas por
+		-- dentro: primero trabaja uno y luego el otro), compuerta y pilar, bifurcación (carril alto: muro y viga ·
+		-- bajo: viga y muro) y final con compuerta y ventana.
 		title = "Autumn Trial",
-		width = 260,
-		height = 200,
+		tagline = "Everything the forest taught",
+		width = 220,
+		height = 170,
 		path = {
 			{ kind = "straight", length = 250 },
-			{ kind = "arc", angle = -50, radius = 500 },
-			{ kind = "mark", name = "hills" },
-			{ kind = "straight", length = 1250 },
-			{ kind = "arc", angle = 50, radius = 500 },
-			{ kind = "straight", length = 250, height = 150 },
-			{ kind = "mark", name = "low" },
-			{ kind = "straight", length = 400 },
-			{ kind = "straight", length = 250, height = 200 },
-			{ kind = "mark", name = "slalom" },
-			{ kind = "straight", length = 1100 },
-			{ kind = "straight", length = 200 },
+			{ kind = "mark", name = "s1" },
+			{ kind = "arc", angle = -40, radius = 240, rise = -45 },
+			{ kind = "mark", name = "s2" },
+			{ kind = "arc", angle = 40, radius = 240, rise = 45 },
+			{ kind = "mark", name = "g" },
+			{ kind = "straight", length = 560 },
+			{ kind = "straight", length = 150, width = 340 },
+			{ kind = "mark", name = "fork" },
+			{ kind = "straight", length = 780 },
+			{ kind = "straight", length = 150, width = 220 },
+			{ kind = "mark", name = "fin" },
+			{ kind = "straight", length = 560 },
 		},
 		features = function(c)
-			local a = c.mark("hills")
-			c.ridge(a + 380, 10, 18, 22)
-			c.ridge(a + 900, 12, 18, 22)
-			c.lintel(c.mark("low") + 200, 8)
-			local b = c.mark("slalom")
-			c.promontory(b + 250, -1, 80)
-			c.promontory(b + 580, 1, 80)
-			c.promontory(b + 910, -1, 80)
-			c.boostRing(a + 640, 0, 20)
-			c.gate(b + 1060, 75, nil, 4, 0.6)
-			c.feathers(a + 950, a + 1150, 4, -35, -20, 35, -20)
+			local q = 240 * math.rad(40) / 2
+			c.window(c.mark("s1") + q, 40, -25, 120, 90) -- abajo-derecha (girando a la derecha): el izquierdo al centro
+			c.window(c.mark("s2") + q, -40, 25, 120, 90) -- arriba-izquierda: el izquierdo fuera
+			local g = c.mark("g")
+			c.gate(g + 170, 85, nil, 3.8, 0.2)
+			c.pillar(g + 420, -40, 60, 1)
+			local f = c.mark("fork")
+			local lanes = c.divider(f + 60, f + 720, 0, 40, -1) -- A = izquierda · B = derecha
+			c.barrier(f + 260, 10, 35, lanes.A)
+			c.lintel(f + 580, 15, 35, lanes.A)
+			c.lintel(f + 260, 15, 35, lanes.B)
+			c.barrier(f + 580, 5, 35, lanes.B)
+			c.boostRing(f + 420, lanes.B.u, 0)
+			local fin = c.mark("fin")
+			c.gate(fin + 150, 82, nil, 3.6, 0.4)
+			c.window(fin + 390, 40, 25, 115, 88) -- arriba-derecha: el derecho fuera
 		end,
 	},
 
-	-- ── Capítulo 4 · Mesetas del desierto (16-20): subir y bajar con obstáculos ─
-	{ -- 16: subida en escalones: tramos de subida (~13°) separados por rellanos; un saliente en el segundo.
-		title = "Mesa Steps",
-		width = 240,
+	-- ── Capítulo 4 · Mesetas del desierto (16-20): "Aire y espacio" ─────────────
+	-- Salas abiertas y mucha altura: columnas ascendentes para subir mesetas, voladizos para volver a bajar, aspas
+	-- (nuevo: las esquinas siempre libres), horquillas cerradas en las que cada vez trabaja uno, y la tormenta
+	-- (viento y descendentes mientras se apunta a ventanas).
+	{ -- 16 · Mesa Hop — de meseta en meseta. Una sala enorme con tres mesetas cada vez más altas: se sube por una
+		-- columna ascendente (a un lado y al otro), se pasa por encima y se baja bajo el voladizo siguiente. Final:
+		-- la tercera meseta, casi rozando el cielo.
+		title = "Mesa Hop",
+		tagline = "From mesa to mesa",
+		width = 220,
+		height = 180,
+		path = {
+			{ kind = "straight", length = 200 },
+			{ kind = "straight", length = 100, width = 380, height = 400 },
+			{ kind = "mark", name = "a" },
+			{ kind = "straight", length = 1900 },
+			{ kind = "straight", length = 120, width = 220, height = 180 },
+			{ kind = "straight", length = 230 },
+		},
+		features = function(c)
+			local a = c.mark("a")
+			c.updraft(a + 40, 290, 20, -80, 120)
+			c.point(a + 100, -80, 10)
+			c.barrier(a + 400, 60, 35) -- meseta 1
+			c.lintel(a + 700, -30, 35) -- voladizo: volver a bajar
+			c.updraft(a + 740, 290, 20, 80, 120)
+			c.point(a + 800, 80, 10)
+			c.barrier(a + 1100, 80, 35) -- meseta 2
+			c.lintel(a + 1400, -30, 35)
+			c.updraft(a + 1430, 340, 22, -80, 120)
+			c.point(a + 1500, -80, 10)
+			c.point(a + 1660, -70, 80) -- subir dentro de la columna, no salirse antes
+
+			c.barrier(a + 1800, 88, 30) -- meseta 3
+			c.feathers(a + 1820, a + 1860, 2, 0, 120, 0, 120)
+		end,
+	},
+	{ -- 17 · Dust Devils — aspas (nuevo). Giran alrededor del eje del corredor y las esquinas de abajo siempre
+		-- quedan libres: abajo-derecha (el izquierdo al centro) o abajo-izquierda (el derecho al centro); el centro,
+		-- solo con el tiempo justo. Entre aspa y aspa, volver arriba por una ventana central.
+		title = "Dust Devils",
+		tagline = "Pick the free corner",
+		intro = "NEW: spinning blades. The corners stay clear!",
+		width = 220,
 		height = 200,
 		path = {
 			{ kind = "straight", length = 250 },
-			{ kind = "straight", length = 450, rise = 80 },
-			{ kind = "straight", length = 350 },
-			{ kind = "straight", length = 450, rise = 110 },
-			{ kind = "mark", name = "landing" },
-			{ kind = "straight", length = 350 },
-			{ kind = "straight", length = 450, rise = 110 },
-			{ kind = "straight", length = 250 },
-		},
-		features = function(c)
-			c.guide(250 + 450 + 175, 0, 0)
-			c.updraft(250 + 450 + 350 + 40, 380, 10)
-			c.feathers(250 + 450 + 350 + 100, 250 + 450 + 350 + 400, 4, 30, 20, 30, 50)
-			c.promontory(c.mark("landing") + 175, -1, 80)
-			c.boostRing(c.mark("landing") + 700, 0, 0)
-		end,
-	},
-	{ -- 17: bajada larga con vigas colgadas: agacharse mientras se desciende.
-		title = "Canyon Drop",
-		width = 270,
-		height = 210,
-		path = {
-			{ kind = "straight", length = 250 },
-			{ kind = "mark", name = "drop" },
-			{ kind = "straight", length = 1500, rise = -300 },
-			{ kind = "straight", length = 250 },
-			{ kind = "arc", angle = -20, radius = 500 },
-			{ kind = "arc", angle = 20, radius = 500 },
+			{ kind = "mark", name = "a" },
+			{ kind = "straight", length = 1650 },
+			{ kind = "arc", angle = 25, radius = 300 },
+			{ kind = "arc", angle = -25, radius = 300 },
 			{ kind = "straight", length = 200 },
 		},
 		features = function(c)
-			-- Corriente descendente (nuevo): ayuda a meterse bajo las vigas, pero hunde si no se corrige.
-			local a = c.mark("drop")
-			c.downdraft(a + 250, 250, 8)
-			c.lintel(a + 450, 8, 45)
-			c.feathers(a + 600, a + 800, 4, 0, -30, 0, -30)
-			c.downdraft(a + 850, 250, 8)
-			c.lintel(a + 1050, 8, 45)
+			local a = c.mark("a")
+			c.spinner(a + 150, 2, 5, 1) -- esquina abajo-derecha
+			c.window(a + 460, 0, 10, 130, 100) -- volver al centro
+			c.spinner(a + 760, 2, 5, -1, 0.3) -- esquina abajo-izquierda
+			c.feathers(a + 900, a + 960, 2, 0, 0, 0, 0)
+			c.window(a + 1060, 0, 10, 130, 100)
+			c.spinner(a + 1360, 3, 6, 1, 0.1) -- tres aspas
+			c.boostRing(a + 1560, 0, 20)
 		end,
 	},
-	{ -- 18: curvas en zigzag que suben y bajan (más cerradas y largas que en el nivel 3).
+	{ -- 18 · Switchbacks — horquillas. Curvas cerradas (radio 130) que suben y bajan: girar subiendo a la
+		-- izquierda lo hace el izquierdo, bajando a la derecha el izquierdo al centro… en cada horquilla trabaja uno.
+		-- Final: ventana arriba-izquierda y abajo-derecha seguidas.
 		title = "Switchbacks",
-		width = 240,
-		height = 200,
+		tagline = "Every hairpin, a new job",
+		width = 200,
+		height = 180,
 		path = {
 			{ kind = "straight", length = 250 },
-			{ kind = "arc", angle = -45, radius = 320, rise = 60 },
-			{ kind = "straight", length = 180 },
-			{ kind = "arc", angle = 90, radius = 320, rise = -100 },
-			{ kind = "straight", length = 180 },
-			{ kind = "arc", angle = -90, radius = 320, rise = 80 },
-			{ kind = "straight", length = 180 },
-			{ kind = "arc", angle = 45, radius = 320, rise = -40 },
-			{ kind = "straight", length = 250 },
+			{ kind = "arc", angle = 60, radius = 130, rise = 30 },
+			{ kind = "straight", length = 120 },
+			{ kind = "arc", angle = -120, radius = 130, rise = -60 },
+			{ kind = "straight", length = 120 },
+			{ kind = "arc", angle = 120, radius = 130, rise = 60 },
+			{ kind = "straight", length = 120 },
+			{ kind = "arc", angle = -60, radius = 130, rise = -30 },
+			{ kind = "mark", name = "fin" },
+			{ kind = "straight", length = 650 },
 		},
 		features = function(c)
-			local q = 320 * math.rad(45)
-			c.boostRing(250 + q + 90, 0, 0)
-			c.feathers(250 + q + 180 + q * 0.5, 250 + q + 180 + q * 1.5, 5, 35, 10, 35, -20)
-			c.boostRing(250 + 3 * q + 180 + 90, 0, 0)
+			local fin = c.mark("fin")
+			c.feathers(250 + 136 + 120 + 90, 250 + 136 + 120 + 180, 3, 35, 0, 35, 0) -- por dentro de la 2.ª horquilla
+			c.window(fin + 220, -40, 25, 120, 90)
+			c.window(fin + 480, 40, -25, 120, 90)
 		end,
 	},
-	{ -- 19: un saliente te aparta justo antes de un paso estrecho (170 × 150): hay que volver al centro.
-		title = "Mesa Gap",
-		width = 270,
-		height = 210,
+	{ -- 19 · Sandstorm — la tormenta. Viento lateral mientras se apunta a ventanas (una contra el viento, otra a
+		-- favor: cuidado con pasarse), descendente antes de un muro y ráfagas. Final: ventana abajo tras la curva.
+		title = "Sandstorm",
+		tagline = "Aim through the storm",
+		width = 220,
+		height = 180,
 		path = {
-			{ kind = "straight", length = 300 },
-			{ kind = "mark", name = "gate" },
-			{ kind = "straight", length = 400 },
-			{ kind = "straight", length = 250, width = 170, height = 150 },
-			{ kind = "straight", length = 450 },
-			{ kind = "straight", length = 250, width = 270, height = 210 },
-			{ kind = "straight", length = 300 },
-			{ kind = "arc", angle = 25, radius = 450 },
-			{ kind = "arc", angle = -25, radius = 450 },
-			{ kind = "straight", length = 200 },
+			{ kind = "straight", length = 250 },
+			{ kind = "mark", name = "a" },
+			{ kind = "straight", length = 1400 },
+			{ kind = "arc", angle = -35, radius = 170 },
+			{ kind = "arc", angle = 35, radius = 170 },
+			{ kind = "mark", name = "b" },
+			{ kind = "straight", length = 520 },
 		},
 		features = function(c)
-			c.promontory(c.mark("gate") + 200, 1, 95)
-			c.feathers(c.mark("gate") + 700, c.mark("gate") + 850, 3, 0, 20, 0, 20)
-			c.downdraft(c.mark("gate") + 1000, 250, 7)
-			c.boostRing(c.mark("gate") + 1150, 0, -20)
+			local a = c.mark("a")
+			c.crosswind(a - 150, 810, 1, 11) -- empuja a la derecha desde la entrada
+			c.window(a + 120, -40, 25, 120, 90) -- arriba-izquierda, contra el viento
+			c.window(a + 470, 40, -25, 120, 90) -- abajo-derecha, a favor (no pasarse)
+			c.downdraft(a + 720, 380, 7)
+			c.point(a + 820, 0, 25) -- subir antes: la descendente hunde
+			c.barrier(a + 1000, 5, 35)
+			c.gusts(a + 1130, 4, 110, 80, 18, -1)
+			c.window(c.mark("b") + 200, 0, -30, 120, 90)
+			c.boostRing(c.mark("b") + 380, 0, 15)
 		end,
 	},
-	{ -- 20: prueba del capítulo: escalones, zigzag bajando, bajada con viga y paso estrecho.
+	{ -- 20 · Mesa Run (prueba del capítulo) — meseta con columna y voladizo, dos horquillas, aspa, bifurcación
+		-- (izquierda: viga y muro · derecha: viento hacia el divisor y muro) y final con compuerta y ventana.
 		title = "Mesa Run",
-		width = 260,
-		height = 200,
+		tagline = "The whole desert",
+		width = 220,
+		height = 180,
 		path = {
-			{ kind = "straight", length = 250 },
-			{ kind = "straight", length = 400, rise = 70 },
 			{ kind = "straight", length = 200 },
-			{ kind = "straight", length = 400, rise = 70 },
-			{ kind = "mark", name = "top" },
-			{ kind = "straight", length = 300 },
-			{ kind = "arc", angle = -40, radius = 380, rise = -40 },
-			{ kind = "arc", angle = 40, radius = 380, rise = -40 },
-			{ kind = "mark", name = "drop" },
-			{ kind = "straight", length = 800, rise = -60 },
-			{ kind = "straight", length = 200 },
-			{ kind = "straight", length = 200, width = 190, height = 160 },
-			{ kind = "straight", length = 300 },
-			{ kind = "straight", length = 200, width = 260, height = 200 },
-			{ kind = "straight", length = 200 },
+			{ kind = "straight", length = 100, width = 360, height = 380 },
+			{ kind = "mark", name = "m" },
+			{ kind = "straight", length = 820 },
+			{ kind = "straight", length = 120, width = 220, height = 180 },
+			{ kind = "straight", length = 150 },
+			{ kind = "arc", angle = 60, radius = 170 },
+			{ kind = "arc", angle = -60, radius = 170 },
+			{ kind = "mark", name = "s" },
+			{ kind = "straight", length = 450 },
+			{ kind = "straight", length = 150, width = 340 },
+			{ kind = "mark", name = "fork" },
+			{ kind = "straight", length = 720 },
+			{ kind = "straight", length = 150, width = 220 },
+			{ kind = "mark", name = "fin" },
+			{ kind = "straight", length = 660 },
 		},
 		features = function(c)
-			c.guide(c.mark("top") + 150, 0, 0)
-			c.feathers(c.mark("top") + 60, c.mark("top") + 240, 3, -35, 20, 35, 20)
-			local a = c.mark("drop")
-			c.downdraft(a + 200, 200, 7)
-			c.lintel(a + 400, 8, 45)
-			c.boostRing(a + 650, 0, 0)
-			c.promontory(a + 900, 1, 70)
+			local m = c.mark("m")
+			c.updraft(m + 40, 290, 20, -50, 130)
+			c.point(m + 100, -50, 10)
+			c.barrier(m + 380, 70, 35)
+			c.lintel(m + 720, -30, 35)
+			c.spinner(c.mark("s") + 340, 2, 5, -1, 0.2, 0.55, 40) -- esquina abajo-izquierda (aspas cortas: más margen)
+			local f = c.mark("fork")
+			local lanes = c.divider(f + 60, f + 660, 0, 40, -1) -- A = izquierda · B = derecha
+			c.lintel(f + 250, 15, 35, lanes.A)
+			c.barrier(f + 570, 5, 35, lanes.A)
+			c.crosswind(f + 100, 380, -1, 10, lanes.B.u, lanes.B.w) -- empuja hacia el divisor
+			c.barrier(f + 330, 10, 35, lanes.B)
+			local fin = c.mark("fin")
+			c.gate(fin + 220, 100, nil, 3.8, 0.1)
+			c.window(fin + 520, -40, 25, 115, 88)
 		end,
 	},
 
@@ -2423,7 +2509,7 @@ function buildMap(options): string
 		startLength = START_LENGTH,
 		noBackWall = true,
 		scaleFor = function(index)
-			return if index >= 11 and index <= 25 then CORRIDOR_SCALE else 1 -- capítulos 3-5 (1-10 ya van ajustados)
+			return if index >= 21 and index <= 25 then CORRIDOR_SCALE else 1 -- capítulo 5 (1-20 ya van ajustados)
 		end,
 	})
 

@@ -1,6 +1,7 @@
 -- Medidor de RITMO: vuela cada nivel con el piloto completo en modo juego (corrientes, contactos que resbalan) y
 -- mide qué tienen que hacer los dos jugadores y cada cuánto:
---   · activo = hace falta algo (subir/bajar más de un 30 % o girar con balance > 0.25)
+--   · activo = hace falta algo (subir/bajar más de un 30 % o girar con balance > 0.25) o elegir el momento: el
+--     último segundo antes de cruzar un obstáculo móvil (compuerta, aspa, tronco) y el paso por él
 --   · muerto = tramo más largo seguido sin tener que hacer nada (s)
 --   · avisos/min = gestos por minuto; cada gesto se clasifica por quién se mueve:
 --       igual (los dos hacia el mismo lado: subir/bajar) · opuesto (uno fuera y otro dentro: girar/cambio) ·
@@ -38,11 +39,29 @@ end
 -- Vuela un nivel y devuelve sus medidas de ritmo.
 local function measure(index: number, root: Instance)
 	local samples = {}
+	local level = root:FindFirstChild(string.format("Level%02d", index))
+	local movers = if level and level:FindFirstChild("Movers") then level.Movers:GetChildren() else {}
+	local timingReach = Config.ForwardSpeed * 1.2 -- studs antes (y un poco después) del plano del obstáculo
+	local function timing(position: Vector3?): boolean
+		if not position then
+			return false
+		end
+		for _, part in movers do
+			if part:IsA("BasePart") then
+				local d = part.CFrame:PointToObjectSpace(position)
+				local halfSpan = math.max(part.Size.X, part.Size.Y) * 2
+				if d.Z <= timingReach and d.Z >= -30 and math.abs(d.X) < halfSpan and math.abs(d.Y) < halfSpan then
+					return true
+				end
+			end
+		end
+		return false
+	end
 	local pilot = table.clone(FlightTester.FULL)
 	pilot.mode = "game"
 	pilot.stopOnLoss = false
-	pilot.inputs = function(t, lift, balance, a, b)
-		table.insert(samples, { t = t, lift = lift, balance = balance, o = { outwardness(a), outwardness(b) } })
+	pilot.inputs = function(t, lift, balance, a, b, position)
+		table.insert(samples, { t = t, lift = lift, balance = balance, o = { outwardness(a), outwardness(b) }, timing = timing(position) })
 	end
 	local _, info = FlightTester.run(index, nil, pilot, root)
 	local duration = info.time
@@ -56,7 +75,7 @@ local function measure(index: number, root: Instance)
 		if sample.t < approach then
 			continue
 		end
-		if math.abs(sample.lift - 0.5) > 0.15 or math.abs(sample.balance) > 0.25 then
+		if math.abs(sample.lift - 0.5) > 0.15 or math.abs(sample.balance) > 0.25 or sample.timing then
 			activeTime += dt
 			idle = 0
 		else

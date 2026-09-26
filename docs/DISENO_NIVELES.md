@@ -4,7 +4,7 @@ La mecánica central: **dos personas, un ala**. Cada nivel existe para crear sit
 tengan que coordinarse, hablar y reaccionar. Prioridades: **divertido > difícil · coordinación > complejidad ·
 situaciones nuevas > mecánicas nuevas · identidad > cantidad de obstáculos**.
 
-Esta guía es la base para rehacer los niveles 11-50 con el mismo estándar que Flight School y los niveles 1-10.
+Flight School y los niveles 1-20 ya siguen esta guía; es la base para rehacer los niveles 21-50.
 
 ## 1. Los verbos (posición de cada jugador: 0 = centro, ½ = medio, 1 = extremo)
 
@@ -40,7 +40,7 @@ Esta guía es la base para rehacer los niveles 11-50 con el mismo estándar que 
 | Chicane (r ≤ 120, alternas) | `arc` | los dos a tope y cambiar a la vez |
 | Ascendente / descendente | `ctx.updraft` / `ctx.downdraft (s0, len, fuerza, u?, ancho?)` | leer el aire, anticiparse |
 | Viento lateral / ráfagas | `ctx.crosswind(...)`, `ctx.gusts(s0, n, cada, largo, fuerza, lado)` | inclinarse, corregir |
-| Troncos / compuertas / aspas | `ctx.swingLog`, `ctx.gate`, `ctx.spinner` | elegir el momento |
+| Troncos / compuertas / aspas | `ctx.swingLog`, `ctx.gate`, `ctx.spinner(s, n, periodo, lado, fase, tamaño, inset)` | elegir el momento (aspas: la esquina de abajo del `lado` siempre libre) |
 | Anillos / plumas | `ctx.boostRing`, `ctx.feathers` | recompensa en una línea arriesgada, nunca el contenido |
 
 ## 3. Estructura de un nivel
@@ -56,10 +56,10 @@ Cada nivel tiene en `LEVELS`:
 - `intro` opcional: aviso de algo nuevo;
 - una ficha en el comentario: identidad, concepto, coordinación, momento memorable.
 
-## 4. Reglas de ritmo (capítulos 1-2; las mide `tools/sim/drivers/pacing.luau`)
+## 4. Reglas de ritmo (capítulos 1-4; las mide `tools/sim/drivers/pacing.luau`)
 
 - Algo que hacer cada 2,5-5 s y nunca más de ~5 s sin exigir nada. Excepciones: el respiro final y las salas de
-  espectáculo.
+  espectáculo (≤ ~7 s). Elegir el momento también cuenta: el último segundo antes de un obstáculo móvil.
 - Una idea nueva por nivel. Lo aprendido vuelve más tarde combinado: introducir → practicar → combinar → dominar.
 - Duración: 30-45 s por nivel (las pruebas del capítulo, ~50 s).
 - Valles: corto (360 studs, ~6 s) dentro del capítulo y largo (600, ~10 s) al cambiar de capítulo.
@@ -73,6 +73,8 @@ Cada nivel tiene en `LEVELS`:
 | Bajar hasta ~40 bajo el centro | ~130 studs |
 | Pasar de bajo una viga a encima de un muro (Δ ≈ 75-80) | **≥ 300 studs** (el novato sube a ~17 studs/s) |
 | Tras una curva comprometida, antes del siguiente obstáculo | ≥ 150 studs |
+| Tras dos horquillas seguidas (r ≤ 170), antes de un aspa | ≥ 340 studs: el novato sale dando bandazos |
+| Del último obstáculo al hueco de una ventana diagonal | ≥ 250 studs |
 | Muro dentro de una descendente | añadir un `ctx.point` antes del muro: la buena línea sube antes de lo que dice el instinto |
 
 ## 5. Regla de dificultad (`FlightTester.RULES`)
@@ -81,7 +83,8 @@ Cada nivel tiene en `LEVELS`:
 |---|---|
 | Flight School | novato en el juego sin golpes · tranquilo estricto ≥ 8 |
 | 1-10 | completo estricto ≥ 8 (justo) · novato en el juego ≤ 1 golpe y sin perder el ala (error barato) |
-| 11-25 | novato en el juego ≤ 1 golpe · tranquilo estricto ≥ 4 |
+| 11-20 | completo estricto ≥ 6 · novato en el juego ≤ 1 golpe y sin perder el ala |
+| 21-25 | novato en el juego ≤ 1 golpe · tranquilo estricto ≥ 4 |
 | 26-50 | completo estricto ≥ 4 · tranquilo en el juego sin golpes |
 
 - Bifurcaciones: se prueban los dos carriles.
@@ -136,7 +139,42 @@ despegue de los veteranos) empieza el recorrido de verdad sin cortar el vuelo.
 | A + aire | 9 |
 | Todo | 10 |
 
-## 8. Cómo revisar un nivel
+## 8. Fichas de los niveles 11-20
+
+Capítulo 3 · Bosque otoñal, **"Ritmo"**: lo del capítulo 1, más rápido y combinado. Cada vez trabaja uno distinto
+en los giros subiendo y bajando. 11 y 12 dan la vuelta al recorrido (90° + 90° a la izquierda).
+Capítulo 4 · Mesetas del desierto, **"Aire y espacio"**: salas abiertas, columnas para subir mesetas, aspas,
+horquillas y la tormenta.
+
+| # | Nivel · tagline | Identidad | Coordinación | Momento memorable | Int. | Dur. |
+|---|---|---|---|---|---|---|
+| 11 | Falling Leaves · "Spiral down together" | la espiral que baja (90° a la izq.) | ventanas abajo-por-dentro: el DERECHO al centro, el otro quieto | salir de la espiral por encima del muro | 3 | ~29 s |
+| 12 | Thermals · "Catch the rising air" | térmicas en la curva (+90°) | meterse en la columna (dentro, fuera, centro) y abrirse los dos | el muro que solo se sube con la térmica | 3 | ~39 s |
+| 13 | Forest Gates · "Through the gaps, on time" | compuertas (NUEVO) | elegir el momento; el impulso a la vez para llegar | la compuerta justo al salir de la S | 3→4 | ~39 s |
+| 14 | Rollercoaster · "Up, down, left, right!" | un gesto distinto cada ~4 s | pilar, viga, pilar, muro, rampa, ventana y horquilla de cambio | la ventana tras la rampa | 4 | ~40 s |
+| 15 | Autumn Trial · "Everything the forest taught" | la prueba del bosque | espiral con ventanas (uno y luego el otro), compuerta, bifurcación | elegir carril (alto: muro→viga · bajo: viga→muro) | 5 | ~50 s |
+| 16 | Mesa Hop · "From mesa to mesa" | sala enorme con tres mesetas | columna a un lado y al otro, voladizo para bajar | la tercera meseta, rozando el cielo | 3 | ~46 s |
+| 17 | Dust Devils · "Pick the free corner" | aspas (NUEVO) | la esquina libre la da uno solo (abajo-der.: el izquierdo al centro) | las tres aspas | 3→4 | ~43 s |
+| 18 | Switchbacks · "Every hairpin, a new job" | horquillas (r 130) que suben y bajan | en cada horquilla trabaja uno distinto | las dos ventanas diagonales seguidas | 4 | ~37 s |
+| 19 | Sandstorm · "Aim through the storm" | viento mientras se apunta | ventana contra el viento y otra a favor ("¡no te pases!"), descendente, ráfagas | las ráfagas antes de la S | 4 | ~44 s |
+| 20 | Mesa Run · "The whole desert" | la prueba del desierto | columna y voladizo, horquillas, aspa, bifurcación con viento | la bifurcación (izq.: viga y muro · der.: viento hacia el divisor y muro) | 5 | ~66 s |
+
+**Progresión de ideas:**
+
+| Idea | Nivel |
+|---|---|
+| Giro bajando (uno solo) | 11 |
+| Fuerza + giro subiendo | 12 |
+| Timing (compuertas) + impulso | 13 |
+| Todo el capítulo 1, deprisa | 14 |
+| Prueba del bosque | 15 |
+| Espacio + fuerza vertical | 16 |
+| Timing + esquina (aspas) | 17 |
+| Giros comprometidos con subida y bajada | 18 |
+| Ventanas + viento | 19 |
+| Prueba del desierto | 20 |
+
+## 9. Cómo revisar un nivel
 
 ```bash
 python3 tools/sim/run.py drivers/check.luau from=N to=N dress=false   # regla de dificultad

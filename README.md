@@ -77,16 +77,17 @@ ecuaciones que el juego (`GliderPhysics`) en dos modos:
 | Niveles | Tiene que pasar |
 |---|---|
 | 1-10 (capítulos 1-2: aprender) | completo estricto ≥ 8 · novato en el juego con ≤ 1 golpe (sin perder el ala) |
-| 11-25 (capítulos 3-5: practicar) | novato en el juego con ≤ 1 golpe · tranquilo estricto ≥ 4 |
+| 11-20 (capítulos 3-4: practicar) | completo estricto ≥ 6 · novato en el juego con ≤ 1 golpe (sin perder el ala) |
+| 21-25 (capítulo 5) | novato en el juego con ≤ 1 golpe · tranquilo estricto ≥ 4 |
 | 26-50 (capítulos 6-10: dominar) | completo estricto ≥ 4 · tranquilo en el juego sin golpes |
 
 Los pilotos vuelan con las corrientes del nivel, y en los niveles con obstáculos móviles cada piloto vuela con
 **4 desfases** del reloj: tiene que pasar con todos (ningún móvil mata sin remedio).
 
 En las **bifurcaciones** (`RouteB`) cada piloto vuela los dos carriles. El **ritmo** (algo que hacer cada 2,5-5 s,
-nunca más de ~5 s sin nada en los capítulos 1-2) lo mide `tools/sim/drivers/pacing.luau`. La gramática completa
-(verbos de la barra, piezas, estructura de un nivel, fichas de los niveles 1-10) está en
-**[docs/DISENO_NIVELES.md](docs/DISENO_NIVELES.md)**: es la base para rehacer los niveles 11-50.
+nunca más de ~5 s sin nada en los capítulos 1-4) lo mide `tools/sim/drivers/pacing.luau`. La gramática completa
+(verbos de la barra, piezas, estructura de un nivel, fichas de los niveles 1-20) está en
+**[docs/DISENO_NIVELES.md](docs/DISENO_NIVELES.md)**: es la base para rehacer los niveles 21-50.
 
 - Cada nivel es un **corredor guiado**: paredes laterales y suelo + techo translúcido (se roza, limita la altura).
   Antes de cada obstáculo, dos **chevrones** luminosos apuntan hacia donde hay que ir; la salida tiene un marco luminoso.
@@ -112,9 +113,9 @@ nunca más de ~5 s sin nada en los capítulos 1-2) lo mide `tools/sim/drivers/pa
 |---|---|---|
 | 1 · Pradera ("Juntos") | 1-5 | Up & Under (vigas y muros) · Swap (curvas y chicane) · Windows (¿quién se mueve?) · The Chimney (corriente gigante) · Split Decision (bifurcación) |
 | 2 · Cañón rojo ("El cañón empuja") | 6-10 | The Big Drop (caída y túnel; llega el impulso) · Crosswind (viento y ráfagas) · Swinging Logs · Heavy Air (descendentes) · Canyon Trial |
-| 3 · Bosque otoñal | 11-15 | giro largo de 90° · colinas seguidas (+90°) · **compuertas** · slalom rápido · Autumn Trial |
-| 4 · Mesetas del desierto | 16-20 | escalones con corriente · bajada con vigas y **corrientes descendentes** · zigzag · saliente antes de un paso estrecho · Mesa Run |
-| 5 · Glaciar | 21-25 | giro de 90° con viento · grieta con corriente (+90°) · carámbanos y **aspas** · salientes dentro de las curvas · Glacier Trial |
+| 3 · Bosque otoñal ("Ritmo") | 11-15 | Falling Leaves (espiral bajando, 90°) · Thermals (térmicas en la curva, +90°) · Forest Gates (**compuertas**) · Rollercoaster (un gesto distinto cada ~4 s) · Autumn Trial |
+| 4 · Mesetas del desierto ("Aire y espacio") | 16-20 | Mesa Hop (mesetas con columnas y voladizos) · Dust Devils (**aspas**: elegir la esquina libre) · Switchbacks (horquillas) · Sandstorm (ventanas con viento) · Mesa Run |
+| 5 · Glaciar | 21-25 | giro de 90° con viento · grieta con corriente (+90°) · carámbanos y aspas · salientes dentro de las curvas · Glacier Trial |
 | 6 · Acantilados | 26-30 | picado y colina al salir · **pilares** (farallones) · colina + viga seguidas · horquillas de radio 180 · Cliff Trial |
 | 7 · Selva | 31-35 | giro de 90° con pilares · vigas en curva (+90°) · colina y saliente, viga y pilar · laberinto de pilares · Jungle Trial |
 | 8 · Volcán | 36-40 | tubo bajo y estrecho · subida larga con salientes · slalom de magma · espiral bajando · Volcano Trial |
@@ -275,8 +276,8 @@ dos desde la salida; las pruebas con `DevStartLevel` y los vuelos en solitario n
   abren y cierran (nunca del todo) y **aspas** giratorias (las esquinas quedan libres). Su posición es una función del
   reloj compartido: el servidor mueve colisionadores invisibles (`MoverService`) y cada cliente dibuja la copia
   visual con la misma fórmula (`MoverVisuals`), así se ven suaves y coinciden con lo que choca.
-- **Niveles**: los capítulos 1-2 siguen la gramática de `docs/DISENO_NIVELES.md` (un nivel = una idea con
-  identidad). Los capítulos 3-5 van al 75 % de sección. En los capítulos 6-10, `ctx.autoExtras` reparte 2-4
+- **Niveles**: los capítulos 1-4 siguen la gramática de `docs/DISENO_NIVELES.md` (un nivel = una idea con
+  identidad). El capítulo 5 va al 75 % de sección. En los capítulos 6-10, `ctx.autoExtras` reparte 2-4
   elementos por nivel según `CHAPTER_EXTRAS`.
 - **Valles**: corto (~6 s) entre niveles de un mismo capítulo y largo (~10 s) al cambiar de capítulo.
 

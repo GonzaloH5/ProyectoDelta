@@ -246,7 +246,7 @@ function FlightTester.run(levelIndex: number, routeName: string?, pilot, root: I
 		-- ── Mismo cálculo que GliderSession._computeInputs ──
 		local liftInput, balanceInput = GliderPhysics.inputs(players[1].position, players[2].position)
 		if pilot.inputs then
-			pilot.inputs(t, liftInput, balanceInput, players[1].position, players[2].position) -- ritmo (tools/sim/drivers/pacing)
+			pilot.inputs(t, liftInput, balanceInput, players[1].position, players[2].position, pos) -- ritmo (tools/sim/drivers/pacing)
 		end
 		maxBalance = math.max(maxBalance, math.abs(balanceInput))
 		minLift, maxLift = math.min(minLift, liftInput), math.max(maxLift, liftInput)
@@ -410,7 +410,9 @@ end
 --   1-10  (capítulos 1-2, aprender): el completo pasa con ≥ 8 (justo: quien lo hace bien va holgado) y el novato
 --         llega en el juego con ≤ 1 golpe (puede equivocarse alguna vez, pero no pierde el ala). Se permite pedir
 --         maniobras a tope (girar fuerte, subir y bajar seguidos): es lo que hace falta para coordinarse.
---   11-25 (capítulos 3-5, practicar): el novato llega en el juego (≤ 1 golpe: hay 2 corazones) · el tranquilo pasa con ≥ 4
+--   11-20 (capítulos 3-4, practicar y combinar, con la gramática nueva): el completo pasa con ≥ 6 y el novato
+--         llega en el juego con ≤ 1 golpe (más apretado que 1-10, igual de justo)
+--   21-25 (capítulo 5, practicar): el novato llega en el juego (≤ 1 golpe: hay 2 corazones) · el tranquilo pasa con ≥ 4
 --   26-50 (capítulos 6-10, dominar): el completo pasa con ≥ 4 y el tranquilo llega en el juego sin golpes
 --         (en la regla estricta el tranquilo puede fallar: exige maniobras fuertes, pero se pueden hacer)
 -- Reglas de diseño que el piloto no mide: ≥ 2 s de vuelo (120 studs) entre dos obstáculos; como mucho una
@@ -419,6 +421,7 @@ end
 -- Bifurcaciones: si el nivel tiene RouteB (el otro carril), cada piloto vuela los dos carriles.
 FlightTester.RULES = {
 	{ upTo = 10, checks = { { FlightTester.FULL, 8 }, { FlightTester.NOVICE_GAME, 1 } } },
+	{ upTo = 20, checks = { { FlightTester.FULL, 6 }, { FlightTester.NOVICE_GAME, 1 } } },
 	{ upTo = 25, checks = { { FlightTester.NOVICE_GAME, 1 }, { FlightTester.CALM, 4 } } },
 	{ upTo = 50, checks = { { FlightTester.FULL, 4 }, { FlightTester.CALM_GAME, 0 } } },
 }
