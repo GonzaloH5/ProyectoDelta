@@ -1258,13 +1258,15 @@ local LEVELS = {
 			c.window(out + 820, 40, -25, 120, 90) -- abajo-derecha: ahora el IZQUIERDO al centro
 		end,
 	},
-	{ -- 12 · Thermals — térmicas en la curva. Otros 90° a la izquierda subiendo: antes de cada muro alto hay una
-		-- columna ascendente (una por dentro, otra por fuera, otra en medio); sin ella el muro no se sube. Girar y
-		-- meterse en la columna, abrirse los dos. Final: ventana arriba-izquierda (ahora trabaja el IZQUIERDO).
+	{ -- 12 · Thermals (RESPIRO) — el Chimney del bosque. Una sala enorme sobre el dosel otoñal: otros 90° a la
+		-- izquierda subiendo 190 studs, pero las térmicas (anchas y fuertes) os suben solas. No hay muros: basta con
+		-- meterse en la columna y abrirse, mirar el bosque y recoger las plumas que suben en espiral. Final: el anillo
+		-- en lo alto de la última térmica.
 		title = "Thermals",
 		tagline = "Catch the rising air",
-		width = 210,
-		height = 190,
+		kind = "breather",
+		width = 380,
+		height = 360,
 		path = {
 			{ kind = "straight", length = 360 },
 			{ kind = "mark", name = "t1" },
@@ -1276,19 +1278,23 @@ local LEVELS = {
 			{ kind = "mark", name = "t3" },
 			{ kind = "straight", length = 320, rise = 70 },
 			{ kind = "mark", name = "fin" },
-			{ kind = "straight", length = 450 },
+			{ kind = "straight", length = 330 },
+			{ kind = "straight", length = 120, width = 210, height = 190 },
 		},
 		features = function(c)
 			local t1, t2, t3 = c.mark("t1"), c.mark("t2"), c.mark("t3")
-			c.updraft(t1 + 20, 220, 18, -55, 90) -- por dentro (izquierda)
-			c.point(t1 + 60, -55, 10)
-			c.barrier(t1 + 280, 45, 30)
-			c.updraft(t2, 250, 18, 45, 100) -- por fuera (derecha)
-			c.point(t2 + 90, 45, 10)
-			c.barrier(t2 + 290, 38, 30)
-			c.updraft(t3 + 10, 240, 18, 0, 100)
-			c.barrier(t3 + 280, 45, 30)
-			c.window(c.mark("fin") + 250, -40, 25, 120, 90) -- arriba-izquierda: el izquierdo fuera
+			-- Tres térmicas en la línea (a un lado, al otro y en medio): se entra con un toque y suben solas.
+			-- Suben lo mismo que el camino (~11 studs/s): dentro de la columna no hay que hacer nada.
+			for _, thermal in { { t1, -20 }, { t2, 20 }, { t3, 0 } } do
+				local s0, u = thermal[1], thermal[2]
+				c.updraft(s0 - 20, 340, 11, u, 220)
+				c.feathers(s0 + 60, s0 + 280, 4, u - 25, 10, u + 25, 30)
+			end
+			-- Final: gran picado hasta rozar el dosel y subir al anillo ("¡uuuuh!").
+			local fin = c.mark("fin")
+			c.point(fin + 90, 0, -120, nil, false)
+			c.feathers(fin + 70, fin + 130, 3, 0, -110, 0, -120)
+			c.boostRing(fin + 260, 0, 0)
 		end,
 	},
 	{ -- 13 · Forest Gates — compuertas (nuevo). Se abren y cierran; en el centro siempre queda hueco, pero más
@@ -1394,11 +1400,12 @@ local LEVELS = {
 	-- Salas abiertas y mucha altura: columnas ascendentes para subir mesetas, voladizos para volver a bajar, aspas
 	-- (nuevo: las esquinas siempre libres), horquillas cerradas en las que cada vez trabaja uno, y la tormenta
 	-- (viento y descendentes mientras se apunta a ventanas).
-	{ -- 16 · Mesa Hop — de meseta en meseta. Una sala enorme con tres mesetas cada vez más altas: se sube por una
-		-- columna ascendente (a un lado y al otro), se pasa por encima y se baja bajo el voladizo siguiente. Final:
-		-- la tercera meseta, casi rozando el cielo.
+	{ -- 16 · Mesa Hop (RESPIRO) — de meseta en meseta. Una sala enorme con tres mesetas cada vez más altas: cada
+		-- columna ascendente (ancha, casi en el centro) os sube sola por encima de la siguiente, y después se planea
+		-- bajando hasta la próxima. Sin voladizos ni precisión: mirar el desierto y recoger las plumas de las cimas.
 		title = "Mesa Hop",
 		tagline = "From mesa to mesa",
+		kind = "breather",
 		width = 220,
 		height = 180,
 		path = {
@@ -1411,20 +1418,22 @@ local LEVELS = {
 		},
 		features = function(c)
 			local a = c.mark("a")
-			c.updraft(a + 40, 290, 20, -80, 120)
-			c.point(a + 100, -80, 10)
-			c.barrier(a + 400, 60, 35) -- meseta 1
-			c.lintel(a + 700, -30, 35) -- voladizo: volver a bajar
-			c.updraft(a + 740, 290, 20, 80, 120)
-			c.point(a + 800, 80, 10)
-			c.barrier(a + 1100, 80, 35) -- meseta 2
-			c.lintel(a + 1400, -30, 35)
-			c.updraft(a + 1430, 340, 22, -80, 120)
-			c.point(a + 1500, -80, 10)
-			c.point(a + 1660, -70, 80) -- subir dentro de la columna, no salirse antes
-
-			c.barrier(a + 1800, 88, 30) -- meseta 3
-			c.feathers(a + 1820, a + 1860, 2, 0, 120, 0, 120)
+			for _, mesa in { { 0, 0, 40 }, { 640, 0, 55 }, { 1280, 0, 70 } } do
+				local s0, u, reach = a + mesa[1], mesa[2], mesa[3]
+				c.updraft(s0 + 40, 340, 13, u, 220)
+				c.barrier(s0 + 420, reach, 40)
+				c.feathers(s0 + 400, s0 + 440, 2, 0, reach + 45, 0, reach + 45)
+			end
+			-- La línea ideal va en escalera por encima de las mesetas (sin bajar entre una y otra): sube dentro de
+			-- cada columna y se planea arriba hasta la siguiente. Puntos cada 100 para que no la rellene el centro.
+			local tops = { { 0, 0 }, { 420, 80 }, { 680, 80 }, { 1060, 95 }, { 1320, 95 }, { 1700, 110 }, { 1900, 40 } }
+			for k = 1, #tops - 1 do
+				local s0, v0, s1, v1 = tops[k][1], tops[k][2], tops[k + 1][1], tops[k + 1][2]
+				for d = s0 + 100, s1, 100 do
+					c.point(a + d, 0, v0 + (v1 - v0) * (d - s0) / (s1 - s0), nil, false)
+				end
+			end
+			c.boostRing(a + 1900, 0, 40) -- la bajada larga hacia la salida
 		end,
 	},
 	{ -- 17 · Dust Devils — aspas (nuevo). Giran alrededor del eje del corredor y las esquinas de abajo siempre
@@ -1465,9 +1474,9 @@ local LEVELS = {
 		width = 220,
 		height = 180,
 		path = {
-			{ kind = "straight", length = 200 },
+			{ kind = "straight", length = 90 },
 			{ kind = "straight", length = 100, width = 360, height = 380 },
-			{ kind = "straight", length = 220 },
+			{ kind = "straight", length = 130 },
 			{ kind = "straight", length = 2, width = SLOT.width, height = SLOT.height, wall = "Sandstone" },
 			{ kind = "mark", name = "slot1" },
 			{ kind = "straight", length = 110, wall = "Sandstone" },
@@ -1487,7 +1496,7 @@ local LEVELS = {
 			{ kind = "mark", name = "burst" },
 			{ kind = "straight", length = 2, width = 380, height = 400 },
 			{ kind = "mark", name = "out" },
-			{ kind = "straight", length = 280 },
+			{ kind = "straight", length = 240 },
 			{ kind = "straight", length = 120, width = 220, height = 180 },
 			{ kind = "straight", length = 100 },
 		},
@@ -2417,6 +2426,7 @@ local function buildCourse(root: Instance, levels, startPos: Vector3, options): 
 		level:SetAttribute("Title", spec.title)
 		level:SetAttribute("Tagline", spec.tagline) -- frase de identidad (tarjeta de título del HUD)
 		level:SetAttribute("Intro", spec.intro) -- aviso de algo nuevo al empezar el nivel (p. ej. el impulso)
+		level:SetAttribute("LevelKind", spec.kind or "technical") -- "breather" = nivel de respiro (docs/DISENO_NIVELES.md)
 		for _, command in spec.path do
 			if command.wall then
 				level:SetAttribute("Tight", true) -- ranura (FlightTester.TIGHT_RULE)

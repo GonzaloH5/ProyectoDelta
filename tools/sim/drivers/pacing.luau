@@ -7,6 +7,8 @@
 --   · avisos/min = gestos por minuto; cada gesto se clasifica por quién se mueve:
 --       igual (los dos hacia el mismo lado: subir/bajar) · opuesto (uno fuera y otro dentro: girar/cambio) ·
 --       uno (se mueve uno solo: giro subiendo/bajando, ventanas)
+-- Tipo de nivel (atributo LevelKind): técnico = tramo muerto ≤ 6 s en medio del nivel y respiro final (el tramo
+-- tranquilo que acaba en la salida) ≤ 9 s · respiro ("breather") = 20-40 % activo y tramo muerto ≤ 12,5 s. Cada fila acaba en OK o en "!" con lo que no cumple.
 -- Después, la cronología de los primeros minutos (dúo nuevo con tutorial y dúo veterano).
 -- Argumentos: from, to (niveles del recorrido principal, 1-10 por defecto), dress (false por defecto), minutes (5).
 local ServerScriptService = game:GetService("ServerScriptService")
@@ -108,6 +110,26 @@ local function measure(index: number, root: Instance)
 			end
 		end
 	end
+	-- Tramo muerto en medio (sin contar el respiro final, que acaba en la salida) y respiro final.
+	local finalRest = idle
+	local midIdle = 0
+	do
+		local run = 0
+		previousT = 0
+		for _, sample in samples do
+			local dt = sample.t - previousT
+			previousT = sample.t
+			if sample.t < approach then
+				continue
+			end
+			if math.abs(sample.lift - 0.5) > 0.15 or math.abs(sample.balance) > 0.25 or sample.timing then
+				midIdle = math.max(midIdle, run)
+				run = 0
+			else
+				run += dt
+			end
+		end
+	end
 	-- Gestos: tramos de movimiento de cada jugador (≥ 20 % de la barra), agrupados si empiezan a < 0,45 s.
 	local moves = {}
 	for player = 1, 2 do
@@ -166,6 +188,8 @@ local function measure(index: number, root: Instance)
 		active = activeTime / math.max(duration - approach, 1e-3),
 		idle = longestIdle,
 		idleAt = longestAt,
+		midIdle = midIdle,
+		finalRest = finalRest,
 		callsPerMinute = calls / math.max(duration, 1e-3) * 60,
 		counts = counts,
 		hits = info.hits,
@@ -173,8 +197,17 @@ local function measure(index: number, root: Instance)
 	}
 end
 
-local function row(name: string, title: string, m)
-	print(string.format("%-11s %-20s %5.1fs  activo %3.0f%%  muerto %4.1fs (en %4.1fs)  avisos/min %4.1f  igual %2d · opuesto %2d · uno %2d  golpes %d", name, title, m.duration, m.active * 100, m.idle, m.idleAt, m.callsPerMinute, m.counts.igual, m.counts.opuesto, m.counts.uno, m.hits))
+local function verdict(kind: string, m): string
+	if kind == "breather" then
+		local ok = m.active >= 0.2 and m.active <= 0.4 and m.idle <= 12.5
+		return if ok then "respiro OK" else "respiro ! (20-40 % activo, muerto ≤ 12,5 s)"
+	end
+	local detail = string.format("en medio %.1fs · final %.1fs", m.midIdle, m.finalRest)
+	return if m.midIdle <= 6 and m.finalRest <= 9 then "técnico OK (" .. detail .. ")" else "técnico ! (" .. detail .. "; límites 6 / 9)"
+end
+
+local function row(name: string, title: string, m, kind: string?)
+	print(string.format("%-11s %-20s %5.1fs  activo %3.0f%%  muerto %4.1fs (en %4.1fs)  avisos/min %4.1f  igual %2d · opuesto %2d · uno %2d  golpes %d  %s", name, title, m.duration, m.active * 100, m.idle, m.idleAt, m.callsPerMinute, m.counts.igual, m.counts.opuesto, m.counts.uno, m.hits, verdict(kind or "technical", m)))
 end
 
 local function levelTitle(root: Instance, index: number): string
@@ -208,7 +241,7 @@ for index = from, to do
 		break
 	end
 	local m = measure(index, map)
-	row(string.format("Level%02d", index), levelTitle(map, index), m)
+	row(string.format("Level%02d", index), levelTitle(map, index), m, map[string.format("Level%02d", index)]:GetAttribute("LevelKind"))
 	mainRows[index] = m
 end
 
