@@ -37,6 +37,7 @@ local GliderConfig = {
 	RespawnCountdown = 1, -- segundos colgados al reaparecer tras perder el ala (o con Respawn)
 	CrashPauseTime = 0.6, -- segundos de caída (voltereta) tras perder el ala antes de reaparecer
 	LandingTime = 2.5, -- segundos que el ala se desliza sobre la isla de meta antes de volver al lobby
+	FinishLandTimeout = 12, -- s de vuelo tras la meta sin aterrizar: se vuelve al lobby igualmente
 	ResetCooldown = 1, -- segundos mínimos entre dos pulsaciones del botón Respawn (de cualquier jugador)
 	ShowDebug = false, -- true = muestra valores de Lift/Balance/velocidad en pantalla
 

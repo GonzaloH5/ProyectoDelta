@@ -524,7 +524,11 @@ function FlightHud.update(glider: Model?, side: number, dt: number)
 			end)
 		end
 		lastCountdown = -1
-		toast.Text = ""
+		if glider:GetAttribute("Completed") and not glider:GetAttribute("Tutorial") then
+			toast.Text, toast.TextColor3 = "FINISH! Glide down and land on the island", CLIMB_COLOR
+		else
+			toast.Text = ""
+		end
 	elseif state == "Ended" then
 		countdown.Text = ""
 		if glider:GetAttribute("Completed") then

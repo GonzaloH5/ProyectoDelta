@@ -542,7 +542,7 @@ RunService.Heartbeat:Connect(function(rawDt)
 			local goal = course:lookahead(level, position, TutorialBot.LOOKAHEAD)
 			local balance = if flying then TutorialBot.steer(position, GliderPhysics.forwardOf(session.physics.yaw), goal) else 0
 			local lift = if flying then TutorialBot.liftFor(position, goal, session.physics.speed) else Config.NeutralLiftPoint
-			local hint = TutorialBot.step(session.slots, session.flight.state, tutorialCues[level] or {}, progress, balance, lift, session.flight.time)
+			local hint = TutorialBot.step(session.slots, session.flight.state, tutorialCues[level] or {}, progress, balance, lift, session.flight.time, session.completed)
 			if session.glider:GetAttribute("TutorialHint") ~= hint then
 				session.glider:SetAttribute("TutorialHint", hint)
 			end

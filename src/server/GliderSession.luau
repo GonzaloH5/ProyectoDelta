@@ -51,6 +51,7 @@ export type Session = typeof(setmetatable(
 		safeCFrame: CFrame, -- dónde reaparece el ala al perderla o con Respawn (checkpoint o punto seguro posterior)
 		checkpoint: number, -- niveles superados (0 = aún en el primero)
 		completed: boolean, -- cruzó la meta: al terminar el vuelo, el dúo vuelve al lobby
+		afterFinish: number, -- s de vuelo desde la meta (FinishLandTimeout)
 		runTime: number, -- cronómetro del recorrido: desde el primer despegue hasta la meta (choques incluidos)
 		timing: boolean,
 		gliderSize: Vector3,
@@ -278,6 +279,7 @@ function GliderSession.new(
 		safeCFrame = root.CFrame,
 		checkpoint = startCheckpoint or 0,
 		completed = false,
+		afterFinish = 0,
 		runTime = 0,
 		timing = false,
 		gliderSize = size,
@@ -516,6 +518,7 @@ function GliderSession.setCheckpoint(self: Session, index: number, spawn: CFrame
 	self.safeCFrame = spawn
 	self.sinceSafePoint = 0
 	self.completed = final
+	self.afterFinish = 0
 	if final then
 		self.timing = false -- la meta para el cronómetro
 	end
@@ -867,6 +870,14 @@ function GliderSession.step(self: Session, dt: number, params: RaycastParams)
 		end
 	elseif state == "Flying" then
 		self:_fly(dt, params)
+		if self.completed and self.flight.state == "Flying" then
+			-- Tras la meta hay que aterrizar; si no lo consiguen (se alejan volando), vuelven al lobby igual.
+			self.afterFinish += dt
+			if self.afterFinish >= Config.FinishLandTimeout then
+				self:finish("completed")
+				return
+			end
+		end
 	elseif state == "Ended" then
 		if flight.timer >= Config.CrashPauseTime then
 			if self.completed then

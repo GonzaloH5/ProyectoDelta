@@ -28,6 +28,8 @@ local MAX_STEER = 0.6 -- el bot nunca pide más giro que esto: en las curvas cer
 local DRIFT_RATE = 0.8 -- rad/s: un resbalón hacia cada lado cada ~4 s
 local DRIFT_SELF_CORRECTION = 0 -- durante un resbalón el bot no corrige el rumbo: lo tiene que hacer el jugador
 local COUNTDOWN_HINT = "Slide along the bar with A / D (or the ◀ ▶ buttons)"
+local LAND_HINT = "Great! Both to the CENTER to glide down and land on the island"
+local LAND_LIFT = 0.15 -- tras la meta el bot va hacia el centro (bajar suave) para aterrizar
 
 export type Cue = { from: number, to: number, hint: string, pump: boolean, drift: boolean }
 
@@ -104,10 +106,18 @@ end
 -- Un paso del bot. slots = huecos de la sesión (bot en SIDE, jugador en -SIDE); balance / lift = lo que hace
 -- falta entre los dos (TutorialBot.steer / liftFor; neutro en la cuenta atrás); progress = fracción recorrida del
 -- nivel; now = reloj de la sesión (resbalones). Devuelve el texto de la indicación actual.
-function TutorialBot.step(slots: { [number]: any }, state: string, cues: { Cue }, progress: number, balance: number, lift: number?, now: number?): string
+-- completed = ya cruzaron la meta: el bot baja a aterrizar (sin eso mantendría la altura y el vuelo no acabaría).
+function TutorialBot.step(slots: { [number]: any }, state: string, cues: { Cue }, progress: number, balance: number, lift: number?, now: number?, completed: boolean?): string
 	local bot = slots[TutorialBot.SIDE]
 	if not (bot and bot.rig) then
 		return ""
+	end
+	if completed then
+		local target = TutorialBot.targetFor(LAND_LIFT, 0)
+		local delta = target - bot.position
+		bot.axis = if math.abs(delta) > DEADBAND then math.sign(delta) else 0
+		bot.pumping = false
+		return if state == "Flying" then LAND_HINT else ""
 	end
 	local active: Cue? = nil
 	if state == "Flying" then

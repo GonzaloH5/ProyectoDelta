@@ -48,6 +48,7 @@ local pending = {}
 local maxAbsBalance = 0
 local maxOff = {} -- mayor distancia lateral a la línea ideal en cada tramo
 local previous = pos
+local finishedAt = nil -- t al cruzar la meta: desde ahí hay que aterrizar (o salta FinishLandTimeout)
 
 while t < 200 do
 	t += DT
@@ -88,7 +89,7 @@ while t < 200 do
 	end
 	local botGoal = course:lookahead(level, pos, TutorialBot.LOOKAHEAD)
 	local balance = TutorialBot.steer(pos, forward, botGoal)
-	TutorialBot.step(slots, "Flying", cues, progress, balance, TutorialBot.liftFor(pos, botGoal, state.speed), t)
+	TutorialBot.step(slots, "Flying", cues, progress, balance, TutorialBot.liftFor(pos, botGoal, state.speed), t, finishedAt ~= nil)
 	for _, slot in slots do
 		slot.velocity = GliderMath.approach(slot.velocity, slot.axis * Config.PlayerSlideSpeed, Config.PlayerSlideResponse, DT)
 		slot.position = math.clamp(slot.position + slot.velocity * DT, -outer, outer)
@@ -102,6 +103,10 @@ while t < 200 do
 	local rootCFrame = GliderPhysics.cframe(state, pos)
 	-- Choque.
 	if workspace:Raycast(pos, Vector3.new(0, -(Config.FeetBelowRoot + Config.GroundClearance), 0), params) then
+		if finishedAt then
+			result = string.format("META en %.1f s · ATERRIZA %.1f s después (vuelta al lobby)", finishedAt, t - finishedAt)
+			break
+		end
 		local exitCF = tutorial[string.format("Level%02d", level)].Exit.CFrame
 		local rel = exitCF:PointToObjectSpace(pos)
 		result = string.format("CHOQUE con el suelo en el tramo %d (%.0f%%) · respecto a la salida: lateral %.0f, alto %.0f, delante %.0f", level, progress * 100, rel.X, rel.Y, -rel.Z)
@@ -109,6 +114,10 @@ while t < 200 do
 	end
 	local center = rootCFrame * CFrame.new(0, (WING_TOP - Config.FeetBelowRoot) / 2, 0)
 	local hit = workspace:Blockcast(center, Vector3.new(SPAN, WING_TOP + Config.FeetBelowRoot, 2), velocity.Unit * (velocity.Magnitude * DT + Config.ObstacleProbeDistance), params)
+	if hit and hit.Normal.Y >= -0.5 and finishedAt then
+		result = string.format("META en %.1f s · choca tras la meta a los %.1f s (vuelta al lobby)", finishedAt, t - finishedAt)
+		break
+	end
 	if hit and hit.Normal.Y >= -0.5 then
 		local exitCF = tutorial[string.format("Level%02d", level)].Exit.CFrame
 		local rel = exitCF:PointToObjectSpace(pos)
@@ -125,11 +134,14 @@ while t < 200 do
 	if crossed then
 		checkpoint = crossed.index
 		if crossed.final then
-			result = string.format("META en %.1f s", t)
-			break
+			finishedAt = t
 		end
 	end
 	previous = pos
+	if finishedAt and t - finishedAt >= Config.FinishLandTimeout then
+		result = string.format("META en %.1f s · SIN ATERRIZAR en %d s (vuelta al lobby por tiempo)", finishedAt, Config.FinishLandTimeout)
+		break
+	end
 end
 local offs = {}
 for index = 1, course:count() do

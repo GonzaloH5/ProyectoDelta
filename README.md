@@ -25,7 +25,8 @@ El juego está en **inglés** (textos de interfaz, carteles, títulos de nivel y
 - Meta: cruzarla muestra "COURSE COMPLETE!" con el tiempo del recorrido y, en cuanto responde la clasificación,
   "NEW DUO RECORD · #N ON THE BOARD" o "NEW PERSONAL BEST!"; el ala **aterriza** en la pista de la isla final, se
   desliza hasta pararse y el dúo vuelve al lobby, donde ve la **pantalla de resultados** (tiempo, medallas, alas
-  perdidas, golpes y puesto) con botón CONTINUE.
+  perdidas, golpes y puesto) con botón CONTINUE. Tras la meta el HUD pide aterrizar; si en 12 s
+  (`FinishLandTimeout`) no han aterrizado, vuelven al lobby igualmente.
 - Los atributos `BiomeTitle` y `BiomeColor` de cada isla los escribe `MapBuilder`: tras cambiar biomas, regenerar el mapa.
 
 - `Workspace.AlaDelta` es la **plantilla**: marca dónde y con qué forma sale cada ala. Al empezar el juego se guarda en ServerStorage.
@@ -208,7 +209,7 @@ siempre en la salida.
   guarda `TutorialDone` y no vuelve a salir. (En Studio sin API Services no se guarda: sale en cada Play.)
 - **Recorrido** `Map.Tutorial` (lo genera `MapBuilder.build()`, lejos del lobby y del recorrido): tres tramos cortos
   vestidos de Pradera, cada uno con su checkpoint: **Climb** (una loma), **Dive** (una viga), **Turn** (izquierda y
-  derecha) y **Boost** (balanceo, anillos y plumas). Si pierdes el ala, reapareces en el último punto seguro. Al terminar: "TUTORIAL COMPLETE!" y vuelves al lobby.
+  derecha) y **Boost** (balanceo, anillos y plumas). Si pierdes el ala, reapareces en el último punto seguro. Al terminar: "TUTORIAL COMPLETE!", el Coach baja al centro para aterrizar en la isla y vuelves al lobby.
 - **Bot compañero** (`TutorialBot`): un personaje R15 colgado en el otro extremo de la barra que hace **solo su
   mitad**, como un compañero de verdad: calcula lo que hace falta para seguir la línea ideal (subir o bajar y girar)
   y se coloca donde le toca a él. **No copia al jugador**: si no te abres con él, subes a medias; si no te inclinas
