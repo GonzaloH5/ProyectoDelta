@@ -42,7 +42,7 @@ Flight School y los niveles 1-20 ya siguen esta guía; es la base para rehacer l
 | Viento lateral / ráfagas | `ctx.crosswind(...)`, `ctx.gusts(s0, n, cada, largo, fuerza, lado)` | inclinarse, corregir |
 | Troncos / compuertas / aspas | `ctx.swingLog`, `ctx.gate`, `ctx.spinner(s, n, periodo, lado, fase, tamaño, inset)` | elegir el momento (aspas: la esquina de abajo del `lado` siempre libre) |
 | Anillos / plumas | `ctx.boostRing`, `ctx.feathers` | recompensa en una línea arriesgada, nunca el contenido |
-| Ranura (arenisca) | tramos con `wall = "Sandstone"` (`SLOT`: ~56 × 44; el ala mide 32) | pilotaje fino. Pared híbrida: un roce rebota ("BOING!") y frena sin daño; un golpe de frente (≥ `SandstoneImpactSpeed`, ~35°) o 3 rebotes en 4 s cuestan un corazón |
+| Ranura (arenisca) | tramos con `wall = "Sandstone"` (`SLOT`: ~56 × 44; el ala mide 32) | pilotaje fino. Pared híbrida: un roce rebota ("BOING!") y frena sin daño; un golpe de frente (≥ `SandstoneImpactSpeed`, ~40°) o 3 rebotes en 3 s cuestan un corazón. Se entra por un embudo de arenisca (quien llega torcido rebota hacia dentro) y dentro también se guardan puntos seguros |
 | Cartel | `ctx.sign(s, u, v, w, h, texto, color)` | nada: humor y aviso ("⚠ 56 STUDS") |
 
 ## 3. Estructura de un nivel
@@ -168,7 +168,7 @@ horquillas y la tormenta.
 | 15 | Autumn Trial · "Everything the forest taught" | la prueba del bosque | espiral con ventanas (uno y luego el otro), compuerta, bifurcación | elegir carril (alto: muro→viga · bajo: viga→muro) | 5 | ~50 s |
 | 16 | Mesa Hop · "From mesa to mesa" (**respiro**) | sala enorme con tres mesetas | dejarse subir por las columnas y planear por arriba | la escalera de mesetas, rozando el cielo | 1 | ~45 s |
 | 17 | Dust Devils · "Pick the free corner" | aspas (NUEVO) | la esquina libre la da uno solo (abajo-der.: el izquierdo al centro) | el aspa rápida del final | 3→4 | ~43 s |
-| 18 | Slot Canyon · "Suck it in!" | la ranura absurdamente estrecha (56 × 44, luego 50) con paredes de arenisca | curvas finas: cada una la hace uno solo, sin pasarse ("¡tú no, YO!") | la grieta en la pared gigante con el cartel "⚠ 56 STUDS"… y reventar en el cañón | 4 | ~41 s |
+| 18 | Slot Canyon · "Suck it in!" | la ranura absurdamente estrecha (embudo → 56 × 44, luego 50) con paredes de arenisca | curvas finas: cada una la hace uno solo, sin pasarse ("¡tú no, YO!") | el cañón que se cierra en embudo bajo el cartel "⚠ 56 STUDS"… y reventar en el cañón | 4 | ~41 s |
 | 19 | Sandstorm · "Aim through the storm" | viento mientras se apunta | ventana contra el viento y otra a favor ("¡no te pases!"), descendente, ráfagas | las ráfagas antes de la S | 4 | ~44 s |
 | 20 | Mesa Run · "The whole desert" | la prueba del desierto | columna y voladizo, horquillas, aspa, bifurcación con viento | la bifurcación (izq.: viga y muro · der.: viento hacia el divisor y muro) | 5 | ~66 s |
 

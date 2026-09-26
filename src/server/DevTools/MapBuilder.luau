@@ -927,7 +927,8 @@ local function makeContext(level: Model, frames, marks, scale: number?)
 				continue
 			end
 			local count = if radius <= 125 then 4 elseif radius <= 160 then 3 else 2
-			level:SetAttribute("CommittedCurves", (level:GetAttribute("CommittedCurves") or 0) + 1)
+			local curves = level:GetAttribute("CommittedCurves")
+			level:SetAttribute("CommittedCurves", (if type(curves) == "number" then curves else 0) + 1)
 			for k = 0, count - 1 do
 				local s = run.s0 - 40 + (length + 20) * k / math.max(count, 1)
 				local f = at(math.max(s, 5))
@@ -1558,8 +1559,9 @@ local LEVELS = {
 			c.boostRing(a + 1620, 0, 20)
 		end,
 	},
-	{ -- 18 · Slot Canyon — la ranura. La sala de mesetas acaba en una pared gigante con una grieta de 50 × 42 (el ala
-		-- mide 32): "¿¿por AHÍ??". Dentro, curvas suaves (un toque), un falso respiro (se ensancha a 120…) y la
+	{ -- 18 · Slot Canyon — la ranura. El cañón se estrecha en embudo hasta una grieta de 56 × 44 (el ala mide 32),
+		-- con el cartel encima: "¿¿por AHÍ??" (el embudo ya es de arenisca: quien entra torcido rebota hacia dentro).
+		-- Dentro, curvas suaves (un toque), un falso respiro (se ensancha a 120…) y la
 		-- segunda ranura, aún más estrecha y con curvas que suben y bajan (cada una la hace uno solo). Las paredes
 		-- son de arenisca: un roce rebota ("BOING!") y frena sin daño; un golpe de frente o tres rebotes seguidos
 		-- cuestan un corazón. Final: la ranura revienta en un cañón enorme.
@@ -1569,10 +1571,9 @@ local LEVELS = {
 		width = 220,
 		height = 180,
 		path = {
-			{ kind = "straight", length = 90 },
-			{ kind = "straight", length = 100, width = 360, height = 380 },
-			{ kind = "straight", length = 130 },
-			{ kind = "straight", length = 2, width = SLOT.width, height = SLOT.height, wall = "Sandstone" },
+			{ kind = "straight", length = 120 },
+			{ kind = "mark", name = "funnel" },
+			{ kind = "straight", length = 260, width = SLOT.width, height = SLOT.height, wall = "Sandstone" },
 			{ kind = "mark", name = "slot1" },
 			{ kind = "straight", length = 110, wall = "Sandstone" },
 			{ kind = "arc", angle = 22, radius = 340, wall = "Sandstone" },
@@ -1597,9 +1598,8 @@ local LEVELS = {
 		},
 		features = function(c)
 			local slot1 = c.mark("slot1")
-			-- La pared gigante con la grieta y el cartel.
-			c.window(slot1 - 1, 0, 0, SLOT.width, SLOT.height, { halfW = 184, bottom = -200, top = 200 })
-			c.sign(slot1 - 3, 0, SLOT.height / 2 + 34, 90, 22, "⚠ 56 STUDS", Color3.fromRGB(255, 200, 60))
+			-- El cartel sobre la boca del embudo (se lee mientras el cañón se va cerrando).
+			c.sign(c.mark("funnel") + 2, 0, 58, 90, 22, "⚠ 56 STUDS", Color3.fromRGB(255, 200, 60))
 			-- Línea ideal densa por el centro de la ranura (sin avisos: la ranura ya es el aviso).
 			for s = slot1 + 20, c.mark("burst") - 10, 30 do
 				c.point(s, 0, 0, nil, false)

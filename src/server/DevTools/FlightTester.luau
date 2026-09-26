@@ -317,7 +317,14 @@ function FlightTester.run(levelIndex: number, routeName: string?, pilot, root: I
 				local spawnCFrame = CFrame.new(pos) * CFrame.Angles(0, yaw, 0)
 				probe.Size = Vector3.new(span + 2 * margin, wingTop + Config.FeetBelowRoot + 2 * margin, reach + 2 * margin)
 				probe.CFrame = spawnCFrame * CFrame.new(0, (wingTop - Config.FeetBelowRoot) / 2, -reach / 2)
-				if #workspace:GetPartsInPart(probe, overlap) == 0 then
+				local blocked = false
+				for _, part in workspace:GetPartsInPart(probe, overlap) do
+					if part:GetAttribute("Kind") ~= "Sandstone" then -- como el juego: la arenisca no impide guardar
+						blocked = true
+						break
+					end
+				end
+				if not blocked then
 					sinceSafe = 0
 					safe = { pos = pos, yaw = yaw, segment = segment }
 				else

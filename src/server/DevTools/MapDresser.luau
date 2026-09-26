@@ -230,7 +230,7 @@ local function sandstoneWall(ctx, parent, part: BasePart, side: number)
 	part.Material = Enum.Material.Sandstone
 	part.Color = SANDSTONE_BANDS[1]
 	local size = part.Size
-	local face = side * (size.X / 2 - 0.45) -- franja de 1 de grueso: su cara queda 0,05 dentro de la pared
+	local face = side * (size.X / 2 - 0.55) -- franja de 1 de grueso: su cara queda 0,05 dentro de la pared
 	local y = -size.Y / 2 + WALL_FOOT
 	local index = 1
 	while y < size.Y / 2 - ctx.rim do
@@ -238,6 +238,7 @@ local function sandstoneWall(ctx, parent, part: BasePart, side: number)
 		local band = ctx.kit.part(parent, "Band", "Strata", Vector3.new(1, height, size.Z + 0.2), part.CFrame * CFrame.new(face, y + height / 2, 0))
 		band.Material = Enum.Material.Sandstone
 		band.Color = SANDSTONE_BANDS[index % #SANDSTONE_BANDS + 1]
+		band:SetAttribute("Kind", "Sandstone") -- si se llega a tocar, rebota como la pared
 		y += height
 		index += 1
 	end

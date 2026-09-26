@@ -130,9 +130,9 @@ local GliderConfig = {
 	-- un golpe fuerte quita corazón como siempre; SandstoneChain rebotes en SandstoneChainWindow s también.
 	SandstoneSpeedLoss = 0.25, -- fracción de velocidad que se pierde en cada rebote
 	SandstonePush = 16, -- studs/s de empujón de rebote (más que ContactPush: se nota el "boing")
-	SandstoneImpactSpeed = 34, -- studs/s contra la pared que cuentan como golpe (≈35°: más que ImpactSpeed, es un túnel)
+	SandstoneImpactSpeed = 38, -- studs/s contra la pared que cuentan como golpe (≈40°: más que ImpactSpeed, es un túnel)
 	SandstoneChain = 3, -- rebotes seguidos que cuestan un corazón
-	SandstoneChainWindow = 4, -- segundos en los que cuentan como seguidos
+	SandstoneChainWindow = 3, -- segundos en los que cuentan como seguidos
 	SandstoneBounceGap = 0.35, -- segundos de contacto continuo que siguen siendo el mismo rebote
 	HarmlessNormalY = 0.7, -- superficies con la normal más vertical que esto son "suelo" (sin daño)
 	HitboxSpanFactor = 0.75, -- el núcleo que choca es más estrecho que el ala (las puntas perdonan)

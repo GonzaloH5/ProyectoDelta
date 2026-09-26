@@ -557,7 +557,16 @@ local function trySafePoint(session: Session, course: Checkpoints.Course)
 	local reach = Config.SafePointLookahead
 	local box = spawn * CFrame.new(0, (dims.wingTop - Config.FeetBelowRoot) / 2, -reach / 2)
 	local size = Vector3.new(dims.span + 2 * margin, height + 2 * margin, reach + 2 * margin)
-	if #workspace:GetPartBoundsInBox(box, size, safeOverlap) == 0 then
+	-- Las paredes de arenisca (ranura) no cuentan: rebotan sin daño, así que dentro de la ranura también se
+	-- guarda el avance.
+	local blocked = false
+	for _, part in workspace:GetPartBoundsInBox(box, size, safeOverlap) do
+		if part:GetAttribute("Kind") ~= "Sandstone" then
+			blocked = true
+			break
+		end
+	end
+	if not blocked then
 		session:setSafePoint(spawn)
 	else
 		session:deferSafePoint(1)
