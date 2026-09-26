@@ -17,6 +17,7 @@ export type Values = {
 	cameraShake: boolean,
 	reduceMotion: boolean, -- sin alabeo de cámara, sin cambios de FOV, sin temblores ni líneas de velocidad
 	hudScale: number, -- 0.8-1.25
+	telegraphMode: number, -- 0 mínimo · 1 normal · 2 siempre completos (TelegraphVisuals)
 }
 
 -- Valores por defecto y límites: compartidos con el servidor (GliderConfig), que aplica los mismos al guardar.

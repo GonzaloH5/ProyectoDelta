@@ -214,12 +214,14 @@ local GliderConfig = {
 		cameraShake = true,
 		reduceMotion = false, -- sin alabeo de cámara, cambios de FOV, temblores ni líneas de velocidad
 		hudScale = 1,
+		telegraphMode = 1, -- avisos visuales: 0 mínimo · 1 normal (lo que diga el nivel) · 2 siempre completos
 	}),
 	SettingsRanges = table.freeze({
 		masterVolume = { 0, 1 },
 		effectsVolume = { 0, 1 },
 		ambienceVolume = { 0, 1 },
 		hudScale = { 0.8, 1.25 },
+		telegraphMode = { 0, 2 },
 	}),
 
 	-- ── Red ────────────────────────────────────────────────────────────

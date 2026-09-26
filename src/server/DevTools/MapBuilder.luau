@@ -79,6 +79,7 @@ local COLORS = {
 	Beacon = Color3.fromRGB(255, 200, 90),
 	Finish = Color3.fromRGB(120, 255, 140),
 	Sign = Color3.fromRGB(34, 28, 24), -- carteles (visual): fondo oscuro, texto claro
+	GapVeil = Color3.fromRGB(255, 225, 120), -- velo de luz en los huecos (aviso visual)
 }
 local STYLE = {
 	Ceiling = { transparency = 0.65, noShadow = true },
@@ -91,6 +92,7 @@ local STYLE = {
 	Finish = { neon = true, visual = true },
 	Beacon = { neon = true },
 	Sign = { visual = true },
+	GapVeil = { neon = true, visual = true, transparency = 0.86, noShadow = true },
 }
 local BEACON_COLORS = {
 	Color3.fromRGB(255, 120, 120),
@@ -429,7 +431,12 @@ local function makeContext(level: Model, frames, marks, scale: number?)
 	-- Anillo guía amarillo (visual, se atraviesa): aro circular que cabe en el hueco w × h.
 	function ctx.guide(s, u, v, w, h)
 		local f = at(s)
-		circleRing(guides, nextName("Ring"), "Guide", frameCFrame(f) * CFrame.new(u, v, 0), math.min(w or 120, h or 85) / 2, 4, 20)
+		local cf = frameCFrame(f) * CFrame.new(u, v, 0)
+		local radius = math.min(w or 120, h or 85) / 2
+		circleRing(guides, nextName("Ring"), "Guide", cf, radius, 4, 20)
+		-- Velo de luz en el hueco: desde lejos se lee "por AHÍ" (capa de silueta de los avisos).
+		local veil = newPart(guides, nextName("GapVeil"), "GapVeil", Vector3.new(0.3, radius * 2 - 6, radius * 2 - 6), cf * CFrame.Angles(0, math.pi / 2, 0), Enum.PartType.Cylinder)
+		veil:SetAttribute("TelegraphLayer", "veil")
 	end
 
 	-- CARTEL (visual) de w × h en (s, u, v), mirando al ala que llega: texto grande (en inglés) con borde de color.
@@ -685,6 +692,11 @@ local function makeContext(level: Model, frames, marks, scale: number?)
 		log.Color = Color3.fromRGB(120, 78, 48)
 		log.Material = Enum.Material.WoodPlanks
 		ctx.point(s, 0, -(reach + 35))
+		-- Aviso: franja oscura en el suelo por donde barre el tronco (se ve desde lejos: "ahí se mueve algo").
+		local sweep = math.min(2 * length * math.sin(math.rad(math.min(amplitude, 55))), f.width - 4)
+		local shadow = newPart(guides, nextName("LogShadow"), "Sign", Vector3.new(sweep, 0.4, 22), frameCFrame(f) * CFrame.new(0, -f.height / 2 + 0.4, 0))
+		shadow.Transparency = 0.45
+		shadow:SetAttribute("TelegraphLayer", "mover")
 	end
 
 	-- COMPUERTAS: dos puertas salen de las paredes y se abren y cierran; el hueco central nunca baja de minGap.
@@ -710,7 +722,15 @@ local function makeContext(level: Model, frames, marks, scale: number?)
 			blade.Color = Color3.fromRGB(220, 70, 60)
 			blade.Material = Enum.Material.Metal
 		end
-		ctx.point(s, (pass or 1) * (f.width / 2 - (inset or 26)), -(f.height / 2 - (inset or 26) + 4))
+		local u, v = (pass or 1) * (f.width / 2 - (inset or 26)), -(f.height / 2 - (inset or 26) + 4)
+		ctx.point(s, u, v)
+		-- Aviso: la esquina libre, enmarcada en verde (por aquí nunca pasa el aspa).
+		local cf = frameCFrame(f) * CFrame.new(u, v, 0)
+		for _, edge in { { 0, 17, 36, 2.4 }, { 0, -17, 36, 2.4 }, { 17, 0, 2.4, 36 }, { -17, 0, 2.4, 36 } } do
+			local bar = newPart(guides, nextName("SafeCorner"), "Chevron", Vector3.new(edge[3], edge[4], 1), cf * CFrame.new(edge[1], edge[2], 0))
+			bar.Color = Color3.fromRGB(110, 255, 140)
+			bar:SetAttribute("TelegraphLayer", "mover")
+		end
 	end
 
 	-- ANILLO DE IMPULSO en (s, u, v): cruzarlo da energía y un empujón. Aro azul circular de diámetro size
@@ -810,9 +830,16 @@ local function makeContext(level: Model, frames, marks, scale: number?)
 		end
 	end
 
-	-- AVISOS: antes de cada obstáculo, dos flechas (chevrones) que apuntan hacia donde hay que ir (arriba,
-	-- abajo o a un lado) a 200 y 130 studs, a medio camino del paso. Solo el primer punto de cada obstáculo y si
-	-- no hay otro obstáculo justo antes (sin amontonar). Visuales: no chocan ni cuentan en las pruebas.
+	-- AVISOS POR CAPAS (visuales: no chocan ni cuentan en las pruebas; los anima TelegraphVisuals en el cliente):
+	--   · luces en secuencia: 5 pares de flechas a 260…80 studs del paso, cada vez más desplazadas hacia él
+	--     (atributos TelegraphGroup / TelegraphOrder: el cliente las enciende en cadena, como una pista);
+	--   · marcador "Cue" en el paso (CueU / CueV = hacia dónde): el cliente avisa en pantalla y con sonido < 1 s antes;
+	--   · paneles de curva amarillo/negro en la pared exterior de cada curva comprometida (r ≤ 200), más cuanto
+	--     más cerrada (ctx.curveSigns);
+	--   · velo de luz en el hueco (ctx.guide).
+	-- Solo el primer punto de cada obstáculo y si no hay otro justo antes (sin amontonar). El nivel dice cuánto
+	-- se ve (atributo TelegraphLevel: "full" o "minimal" en las pruebas de capítulo); el jugador puede cambiarlo.
+	local LIGHT_LEADS = { { 260, 0.12 }, { 215, 0.3 }, { 170, 0.5 }, { 125, 0.7 }, { 80, 0.88 } }
 	function ctx.telegraphs()
 		local telegraphs = newFolder(level, "Telegraphs")
 		local lastS = -math.huge
@@ -825,6 +852,7 @@ local function makeContext(level: Model, frames, marks, scale: number?)
 		table.sort(features, function(a, b)
 			return a.s < b.s
 		end)
+		local group = 0
 		for _, p in features do
 			local previous = lastS
 			lastS = p.s
@@ -832,19 +860,86 @@ local function makeContext(level: Model, frames, marks, scale: number?)
 			if p.s - previous < 260 or math.max(math.abs(du), math.abs(dv)) < 15 then
 				continue
 			end
+			group += 1
 			-- Hacia el paso (también en diagonal: ventanas).
 			local angle = if math.abs(du) < 15 then (if dv > 0 then math.pi / 2 else -math.pi / 2) elseif math.abs(dv) < 15 then (if du > 0 then 0 else math.pi) else math.atan2(dv, du)
-			for index, lead in { { 200, 0.45 }, { 130, 0.8 } } do
+			for order, lead in LIGHT_LEADS do
 				local s = p.s - lead[1]
 				if s < 60 then
 					continue
 				end
 				local f = at(s)
 				local tip = frameCFrame(f) * CFrame.new(du * lead[2], dv * lead[2], 0) * CFrame.Angles(0, 0, angle)
-				local length, spread = 18, math.rad(38)
+				local length, spread = 14 + order * 1.5, math.rad(38)
+				local pair = {}
+				local blocked = false
 				for _, sign in { -1, 1 } do
 					local offset = CFrame.new(-math.cos(spread) * length / 2, sign * math.sin(spread) * length / 2, 0)
-					newPart(telegraphs, string.format("Chevron%02d", index), "Chevron", Vector3.new(length, 2.6, 1), tip * offset * CFrame.Angles(0, 0, -sign * spread))
+					local arrow = newPart(telegraphs, string.format("Chevron%02d", order), "Chevron", Vector3.new(length, 2.6, 1), tip * offset * CFrame.Angles(0, 0, -sign * spread))
+					arrow:SetAttribute("TelegraphGroup", group)
+					arrow:SetAttribute("TelegraphOrder", order)
+					table.insert(pair, arrow)
+					-- Nunca dentro de otro obstáculo (dos obstáculos seguidos, lomas largas): esa luz no se pone.
+					for _, hit in workspace:GetPartsInPart(arrow, OverlapParams.new()) do
+						local kind = hit:GetAttribute("Kind")
+						if kind == "Obstacle" or kind == "Mover" then
+							blocked = true
+						end
+					end
+				end
+				if blocked then
+					for _, arrow in pair do
+						arrow:Destroy()
+					end
+				end
+			end
+			local cue = marker(telegraphs, string.format("Cue%02d", group), frameCFrame(at(p.s)) * CFrame.new(du, dv, 0), Vector3.new(4, 4, 4))
+			cue:SetAttribute("CueU", du)
+			cue:SetAttribute("CueV", dv)
+		end
+		ctx.curveSigns(telegraphs)
+	end
+
+	-- PANELES DE CURVA: en la pared exterior de cada curva comprometida (radio ≤ 200 y ≥ 20°), paneles
+	-- amarillo/negro con una flecha hacia el giro, como en una carretera: 2 (r ≤ 200), 3 (r ≤ 160) o 4 (r ≤ 125),
+	-- el primero un poco antes de empezar la curva.
+	function ctx.curveSigns(parent)
+		local runs, current = {}, nil
+		for index = 2, #frames do
+			local a, b = frames[index - 1], frames[index]
+			local ds = b.s - a.s
+			local dh = b.heading - a.heading
+			local curving = ds > 1e-3 and math.abs(dh) > 1e-4
+			local sign = if dh > 0 then 1 else -1
+			if curving and current and current.sign == sign then
+				current.s1, current.turn = b.s, current.turn + dh
+			elseif curving then
+				current = { s0 = a.s, s1 = b.s, turn = dh, sign = sign }
+				table.insert(runs, current)
+			else
+				current = nil
+			end
+		end
+		for _, run in runs do
+			local length = run.s1 - run.s0
+			local radius = length / math.max(math.abs(run.turn), 1e-4)
+			if radius > 200 or math.abs(run.turn) < math.rad(20) then
+				continue
+			end
+			local count = if radius <= 125 then 4 elseif radius <= 160 then 3 else 2
+			level:SetAttribute("CommittedCurves", (level:GetAttribute("CommittedCurves") or 0) + 1)
+			for k = 0, count - 1 do
+				local s = run.s0 - 40 + (length + 20) * k / math.max(count, 1)
+				local f = at(math.max(s, 5))
+				-- Pared exterior: girando a la izquierda (sign +1) es la derecha (+u).
+				local outer = -run.sign
+				local wallU = outer * (f.width / 2 - 0.6)
+				local board = newPart(parent, "CurveSign", "Sign", Vector3.new(0.6, 20, 16), frameCFrame(f) * CFrame.new(wallU, 4, 0))
+				board.Color = Color3.fromRGB(30, 26, 20)
+				-- Flecha ">" amarilla hacia el giro (dos barras), en la cara que mira al corredor.
+				for _, arm in { -1, 1 } do
+					local bar = newPart(parent, "CurveArrow", "Chevron", Vector3.new(0.4, 2.4, 11), frameCFrame(f) * CFrame.new(wallU - outer * 0.5, 4 + arm * 3.4, 0) * CFrame.Angles(arm * math.rad(40) * run.sign, 0, 0))
+					bar.Color = Color3.fromRGB(255, 200, 40)
 				end
 			end
 		end
@@ -2427,6 +2522,8 @@ local function buildCourse(root: Instance, levels, startPos: Vector3, options): 
 		level:SetAttribute("Tagline", spec.tagline) -- frase de identidad (tarjeta de título del HUD)
 		level:SetAttribute("Intro", spec.intro) -- aviso de algo nuevo al empezar el nivel (p. ej. el impulso)
 		level:SetAttribute("LevelKind", spec.kind or "technical") -- "breather" = nivel de respiro (docs/DISENO_NIVELES.md)
+		-- Avisos: completos al presentar y practicar; mínimos en las pruebas de capítulo (5, 10, 15…: dominar).
+		level:SetAttribute("TelegraphLevel", spec.telegraph or (if index % 5 == 0 then "minimal" else "full"))
 		for _, command in spec.path do
 			if command.wall then
 				level:SetAttribute("Tight", true) -- ranura (FlightTester.TIGHT_RULE)

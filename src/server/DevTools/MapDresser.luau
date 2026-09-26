@@ -574,6 +574,43 @@ local function windVisual(ctx, parent, zone: BasePart)
 	emitter.SpreadAngle = Vector2.new(4, 4)
 	emitter.Rate = math.clamp(zone.Size.X * zone.Size.Z / 600, 10, 45)
 	emitter.Parent = holder
+	-- Estelas: rayas largas en la dirección del aire (se lee hacia dónde empuja aunque no se vean las chispas).
+	local streaks = emitter:Clone()
+	streaks.Name = "Streaks"
+	streaks.Texture = "rbxasset://textures/particles/smoke_main.dds"
+	streaks.Orientation = Enum.ParticleOrientation.VelocityParallel
+	streaks.Squash = NumberSequence.new(-2.5)
+	streaks.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(0.3, 2.2), NumberSequenceKeypoint.new(1, 0) })
+	streaks.Transparency = NumberSequence.new(0.55, 1)
+	streaks.Rate = emitter.Rate * 0.5
+	streaks.Parent = holder
+	if kind == "Updraft" then
+		-- Anillo de polvo en el suelo, en la base de la columna: "aquí sube el aire".
+		local base = zone.CFrame * CFrame.new(0, -zone.Size.Y / 2 + 0.6, 0)
+		local radius = math.min(zone.Size.X, zone.Size.Z) / 2 - 4
+		for k = 0, 11 do
+			local angle = k * math.pi / 6
+			local piece = ctx.kit.part(parent, "UpdraftRing", "WindVeil", Vector3.new(2 * radius * math.sin(math.pi / 12) + 1, 0.6, 3), base * CFrame.Angles(0, angle, 0) * CFrame.new(0, 0, -radius))
+			piece.Color = color
+			piece.Transparency = 0.35
+		end
+	elseif kind == "Crosswind" then
+		-- Mangas de viento a la entrada de la zona, a los dos lados, apuntando hacia donde sopla.
+		local blow = Vector3.new(direction.X, 0, direction.Z)
+		if blow.Magnitude > 1e-3 then
+			local entry = zone.CFrame * CFrame.new(0, 0, zone.Size.Z / 2)
+			for _, side in { -1, 1 } do
+				local foot = entry * CFrame.new(side * (zone.Size.X / 2 - 8), -zone.Size.Y / 2, 0)
+				local pole = ctx.kit.part(parent, "WindsockPole", "WindVeil", Vector3.new(1.2, 26, 1.2), foot * CFrame.new(0, 13, 0)) -- visual: no choca
+				pole.Color = Color3.fromRGB(70, 70, 76)
+				pole.Material = Enum.Material.Metal
+				pole.Transparency = 0
+				local top = foot.Position + Vector3.new(0, 25, 0)
+				local sock = ctx.kit.part(parent, "Windsock", "Hazard", Vector3.new(3.5, 3.5, 12), CFrame.lookAt(top + blow.Unit * 6, top + blow.Unit * 12)) -- visual
+				sock.Color = Color3.fromRGB(255, 120, 40)
+			end
+		end
+	end
 end
 
 -- ── Entrada del nivel: arco de piedra + cartel ────────────────────────

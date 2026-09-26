@@ -58,7 +58,7 @@ corner(gear, UDim.new(1, 0))
 local panel = Instance.new("Frame")
 panel.AnchorPoint = Vector2.new(0, 0.5)
 panel.Position = UDim2.new(0, 72, 0.5, 0)
-panel.Size = UDim2.fromOffset(340, 356)
+panel.Size = UDim2.fromOffset(340, 398)
 panel.BackgroundColor3 = PANEL
 panel.BackgroundTransparency = 0.05
 panel.Visible = false
@@ -186,6 +186,34 @@ slider("Effects", "effectsVolume")
 slider("Ambience", "ambienceVolume")
 toggle("Camera shake", "cameraShake")
 toggle("Reduce motion", "reduceMotion")
+
+-- Avisos visuales: Minimal / Normal / Always full (telegraphMode 0 / 1 / 2). Un botón que va cambiando.
+do
+	local NAMES = { [0] = "MINIMAL", [1] = "NORMAL", [2] = "ALWAYS FULL" }
+	local frame = row(32)
+	local label = text(frame, 15)
+	label.Size = UDim2.new(1, -130, 1, 0)
+	label.Text = "Guides"
+	local button = Instance.new("TextButton")
+	button.AnchorPoint = Vector2.new(1, 0.5)
+	button.Position = UDim2.fromScale(1, 0.5)
+	button.Size = UDim2.fromOffset(120, 28)
+	button.Font = Enum.Font.GothamBold
+	button.TextSize = 14
+	button.TextColor3 = Color3.new(1, 1, 1)
+	button.Parent = frame
+	corner(button, UDim.new(1, 0))
+	local function mode(): number
+		return math.floor((Settings.get() :: any).telegraphMode + 0.5)
+	end
+	button.Activated:Connect(function()
+		Settings.set("telegraphMode", (mode() + 1) % 3)
+	end)
+	table.insert(refreshers, function()
+		button.Text = NAMES[mode()] or "NORMAL"
+		button.BackgroundColor3 = if mode() == 0 then OFF else ON
+	end)
+end
 
 -- Tamaño del HUD: − / + en pasos de 5 %.
 do

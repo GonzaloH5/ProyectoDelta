@@ -31,6 +31,7 @@ local Ambient = require(script:WaitForChild("Ambient"))
 local ScreenFade = require(script:WaitForChild("ScreenFade"))
 require(script:WaitForChild("SettingsPanel")) -- botón ⚙ siempre visible
 require(script:WaitForChild("MoverVisuals")) -- obstáculos móviles animados en el cliente
+local TelegraphVisuals = require(script:WaitForChild("TelegraphVisuals")) -- avisos visuales por capas
 
 local player = Players.LocalPlayer
 Tutorial.show() -- al unirse a la sala
@@ -181,6 +182,7 @@ RunService:BindToRenderStep("GliderClient", Enum.RenderPriority.Camera.Value + 1
 	Backdrop.update(mountedGlider, dt)
 	Ambient.update(mountedGlider, dt)
 	ScreenFade.update(mountedGlider)
+	TelegraphVisuals.update(mountedGlider)
 	TutorialHints.update(mountedGlider)
 	OtherDuos.update(gliderFolder, mountedGlider, dt)
 end)

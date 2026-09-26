@@ -77,6 +77,12 @@ function Movers.cframeAt(params: Params, t: number): CFrame
 	return params.pivot
 end
 
+-- Apertura de una compuerta (0 = hueco mínimo, 1 = máximo) y fase del ciclo (el máximo llega en 0,5).
+function Movers.gateOpenness(params: Params, t: number): (number, number)
+	local k = cycle(params, t)
+	return 0.5 - 0.5 * math.cos(2 * math.pi * k), k
+end
+
 -- Reloj compartido (servidor y clientes ven lo mismo).
 function Movers.now(): number
 	return workspace:GetServerTimeNow()
