@@ -154,7 +154,7 @@ horquillas y la tormenta.
 | 14 | Rollercoaster · "Up, down, left, right!" | un gesto distinto cada ~4 s | pilar, viga, pilar, muro, rampa, ventana y horquilla de cambio | la ventana tras la rampa | 4 | ~40 s |
 | 15 | Autumn Trial · "Everything the forest taught" | la prueba del bosque | espiral con ventanas (uno y luego el otro), compuerta, bifurcación | elegir carril (alto: muro→viga · bajo: viga→muro) | 5 | ~50 s |
 | 16 | Mesa Hop · "From mesa to mesa" | sala enorme con tres mesetas | columna a un lado y al otro, voladizo para bajar | la tercera meseta, rozando el cielo | 3 | ~46 s |
-| 17 | Dust Devils · "Pick the free corner" | aspas (NUEVO) | la esquina libre la da uno solo (abajo-der.: el izquierdo al centro) | las tres aspas | 3→4 | ~43 s |
+| 17 | Dust Devils · "Pick the free corner" | aspas (NUEVO) | la esquina libre la da uno solo (abajo-der.: el izquierdo al centro) | el aspa rápida del final | 3→4 | ~43 s |
 | 18 | Switchbacks · "Every hairpin, a new job" | horquillas (r 130) que suben y bajan | en cada horquilla trabaja uno distinto | las dos ventanas diagonales seguidas | 4 | ~37 s |
 | 19 | Sandstorm · "Aim through the storm" | viento mientras se apunta | ventana contra el viento y otra a favor ("¡no te pases!"), descendente, ráfagas | las ráfagas antes de la S | 4 | ~44 s |
 | 20 | Mesa Run · "The whole desert" | la prueba del desierto | columna y voladizo, horquillas, aspa, bifurcación con viento | la bifurcación (izq.: viga y muro · der.: viento hacia el divisor y muro) | 5 | ~66 s |

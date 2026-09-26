@@ -1396,7 +1396,7 @@ local LEVELS = {
 	},
 	{ -- 17 · Dust Devils — aspas (nuevo). Giran alrededor del eje del corredor y las esquinas de abajo siempre
 		-- quedan libres: abajo-derecha (el izquierdo al centro) o abajo-izquierda (el derecho al centro); el centro,
-		-- solo con el tiempo justo. Entre aspa y aspa, volver arriba por una ventana central.
+		-- solo con el tiempo justo. Entre aspa y aspa, volver arriba por una ventana central. Final: el aspa rápida.
 		title = "Dust Devils",
 		tagline = "Pick the free corner",
 		intro = "NEW: spinning blades. The corners stay clear!",
@@ -1405,7 +1405,7 @@ local LEVELS = {
 		path = {
 			{ kind = "straight", length = 250 },
 			{ kind = "mark", name = "a" },
-			{ kind = "straight", length = 1650 },
+			{ kind = "straight", length = 1700 },
 			{ kind = "arc", angle = 25, radius = 300 },
 			{ kind = "arc", angle = -25, radius = 300 },
 			{ kind = "straight", length = 200 },
@@ -1414,11 +1414,11 @@ local LEVELS = {
 			local a = c.mark("a")
 			c.spinner(a + 150, 2, 5, 1) -- esquina abajo-derecha
 			c.window(a + 460, 0, 10, 130, 100) -- volver al centro
-			c.spinner(a + 760, 2, 5, -1, 0.3) -- esquina abajo-izquierda
-			c.feathers(a + 900, a + 960, 2, 0, 0, 0, 0)
+			c.spinner(a + 820, 2, 5, -1, 0.3, 0.55, 38) -- esquina abajo-izquierda
+			c.feathers(a + 950, a + 1000, 2, 0, 0, 0, 0)
 			c.window(a + 1060, 0, 10, 130, 100)
-			c.spinner(a + 1360, 3, 6, 1, 0.1) -- tres aspas
-			c.boostRing(a + 1560, 0, 20)
+			c.spinner(a + 1460, 2, 3.6, 1, 0.1, 0.55, 38) -- final: el aspa rápida
+			c.boostRing(a + 1620, 0, 20)
 		end,
 	},
 	{ -- 18 · Switchbacks — horquillas. Curvas cerradas (radio 130) que suben y bajan: girar subiendo a la
@@ -1426,7 +1426,7 @@ local LEVELS = {
 		-- Final: ventana arriba-izquierda y abajo-derecha seguidas.
 		title = "Switchbacks",
 		tagline = "Every hairpin, a new job",
-		width = 200,
+		width = 220,
 		height = 180,
 		path = {
 			{ kind = "straight", length = 250 },
@@ -1436,15 +1436,15 @@ local LEVELS = {
 			{ kind = "straight", length = 120 },
 			{ kind = "arc", angle = 120, radius = 130, rise = 60 },
 			{ kind = "straight", length = 120 },
-			{ kind = "arc", angle = -60, radius = 130, rise = -30 },
+			{ kind = "arc", angle = -60, radius = 160, rise = -30 },
 			{ kind = "mark", name = "fin" },
-			{ kind = "straight", length = 650 },
+			{ kind = "straight", length = 740 },
 		},
 		features = function(c)
 			local fin = c.mark("fin")
 			c.feathers(250 + 136 + 120 + 90, 250 + 136 + 120 + 180, 3, 35, 0, 35, 0) -- por dentro de la 2.ª horquilla
-			c.window(fin + 220, -40, 25, 120, 90)
-			c.window(fin + 480, 40, -25, 120, 90)
+			c.window(fin + 300, -40, 25, 120, 90)
+			c.window(fin + 560, 40, -25, 120, 90)
 		end,
 	},
 	{ -- 19 · Sandstorm — la tormenta. Viento lateral mientras se apunta a ventanas (una contra el viento, otra a
@@ -1492,12 +1492,12 @@ local LEVELS = {
 			{ kind = "arc", angle = -60, radius = 170 },
 			{ kind = "mark", name = "s" },
 			{ kind = "straight", length = 450 },
-			{ kind = "straight", length = 150, width = 340 },
+			{ kind = "straight", length = 150, width = 370 },
 			{ kind = "mark", name = "fork" },
 			{ kind = "straight", length = 720 },
 			{ kind = "straight", length = 150, width = 220 },
 			{ kind = "mark", name = "fin" },
-			{ kind = "straight", length = 660 },
+			{ kind = "straight", length = 700 },
 		},
 		features = function(c)
 			local m = c.mark("m")
@@ -1514,7 +1514,7 @@ local LEVELS = {
 			c.barrier(f + 330, 10, 35, lanes.B)
 			local fin = c.mark("fin")
 			c.gate(fin + 220, 100, nil, 3.8, 0.1)
-			c.window(fin + 520, -40, 25, 115, 88)
+			c.window(fin + 570, -40, 25, 115, 88)
 		end,
 	},
 
