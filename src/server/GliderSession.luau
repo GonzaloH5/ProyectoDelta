@@ -78,6 +78,7 @@ export type Session = typeof(setmetatable(
 		impacts: number, -- golpes (contador publicado: efectos en el cliente)
 		practice: boolean, -- modo práctica (Flight School): tocar no quita corazones; golpe fuerte = "bonk"
 		bonks: number, -- golpes en modo práctica (contador publicado: "BONK!" en el cliente)
+		bounces: number, -- rebotes contra arenisca (contador publicado: "BOING!" en el cliente)
 		lastBonk: number,
 		stuckTime: number, -- s seguidos tocando algo en modo práctica (atasco → viento a favor)
 		pumpEnabled: boolean, -- el impulso (Espacio) está disponible (desde Config.PumpFromLevel)
@@ -322,6 +323,7 @@ function GliderSession.new(
 		impacts = 0,
 		practice = false,
 		bonks = 0,
+		bounces = 0,
 		lastBonk = -math.huge,
 		stuckTime = 0,
 		pumpEnabled = true,
@@ -853,6 +855,13 @@ function GliderSession._fly(self: Session, dt: number, params: RaycastParams)
 		self.lastBonk = flight.time
 		self.bonks += 1
 		glider:SetAttribute("Bonks", self.bonks)
+	end
+	if result.event == "bounce" then
+		self.bounces += 1
+		glider:SetAttribute("Bounces", self.bounces)
+		if result.contact then
+			glider:SetAttribute("ContactPoint", result.contact.Position)
+		end
 	end
 	local contact = result.contact
 	if self.practice then

@@ -129,6 +129,14 @@ closeStroke.Parent = close
 local closeScale = Instance.new("UIScale")
 closeScale.Parent = close
 
+-- "BOING!": rebote contra una pared de arenisca (Slot Canyon).
+local boing = close:Clone()
+boing.Text = "BOING!"
+boing.TextColor3 = Color3.fromRGB(255, 190, 90)
+boing.Position = UDim2.fromScale(0.5, 0.38)
+boing.Parent = gui
+local boingScale = boing:FindFirstChildOfClass("UIScale") :: UIScale
+
 local lines = Instance.new("Frame")
 lines.Size = UDim2.fromScale(1, 1)
 lines.BackgroundTransparency = 1
@@ -157,11 +165,26 @@ local function showClose()
 	end)
 end
 
+local boingToken = 0
+local function showBoing()
+	boingToken += 1
+	local token = boingToken
+	boing.Visible = true
+	boing.Rotation = math.random(-12, 12)
+	boingScale.Scale = 1.8
+	TweenService:Create(boingScale, TweenInfo.new(0.35, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+	task.delay(0.7, function()
+		if token == boingToken then
+			boing.Visible = false
+		end
+	end)
+end
+
 -- ── Estado por ala montada ────────────────────────────────────────────
 
 local current: Model? = nil
 local parts: { BasePart } = {}
-local lastImpacts, lastRespawns, lastRings, lastBonks = 0, 0, 0, 0
+local lastImpacts, lastRespawns, lastRings, lastBonks, lastBounces = 0, 0, 0, 0, 0
 local hiddenFeathers: { BasePart } = {}
 local lastState: string? = nil
 local lastCount = -1
@@ -209,7 +232,7 @@ end
 local function mount(glider: Model)
 	clear()
 	current = glider
-	lastImpacts, lastRespawns, lastRings, lastBonks = number(glider, "Impacts"), number(glider, "Respawns"), number(glider, "Rings"), number(glider, "Bonks")
+	lastImpacts, lastRespawns, lastRings, lastBonks, lastBounces = number(glider, "Impacts"), number(glider, "Respawns"), number(glider, "Rings"), number(glider, "Bonks"), number(glider, "Bounces")
 	lastState, lastCount = nil, -1
 	for _, part in glider:GetDescendants() do
 		if part:IsA("BasePart") and part.Name ~= "Root" and part.Transparency < 1 then
@@ -344,6 +367,15 @@ function FlightEffects.update(glider: Model?, dt: number)
 		FlightAudio.play("Impact")
 	end
 	lastBonks = bonks
+	-- Rebote contra arenisca: nube de arena, "boing" y cartel.
+	local bounces = number(glider, "Bounces")
+	if bounces > lastBounces then
+		local contact = glider:GetAttribute("ContactPoint")
+		dust(if typeof(contact) == "Vector3" then contact else root.Position, 14, Color3.fromRGB(225, 170, 110))
+		FlightAudio.play("Bounce", 0.9 + math.random() * 0.3)
+		showBoing()
+	end
+	lastBounces = bounces
 
 	-- Anillo de impulso: destello azul y sonido.
 	local rings = number(glider, "Rings")

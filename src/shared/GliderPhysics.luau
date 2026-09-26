@@ -39,6 +39,8 @@ export type Health = {
 	invulnerableUntil: number,
 	scrapeTime: number, -- segundos de roce acumulados (quitan un corazón al llegar a ScrapeDamageTime)
 	lastContact: number,
+	bounces: { number }, -- instantes de los últimos rebotes contra arenisca (SandstoneChain)
+	lastBounce: number,
 }
 
 export type Dimensions = { span: number, wingTop: number }
@@ -49,10 +51,12 @@ export type Sense = {
 	floorGap: number?, -- studs entre los pies y el suelo de debajo (si está cerca)
 	contact: RaycastResult?,
 	harmless: boolean, -- el contacto es un suelo (Kind Ground/Grass o superficie que mira hacia arriba): solo roza
+	sandstone: boolean, -- el contacto es una pared de arenisca (rebota: GliderPhysics.rebound)
 }
 
 -- Eventos de daño que devuelve fly(): "scrape" (roce), "impact" (golpe: −1 corazón), "crash" (sin corazones).
-export type Event = "scrape" | "impact" | "crash" | "bonk" -- bonk = golpe fuerte en modo práctica (no quita corazones)
+-- bonk = golpe fuerte en modo práctica (no quita corazones) · bounce = rebote contra arenisca (sin daño).
+export type Event = "scrape" | "impact" | "crash" | "bonk" | "bounce"
 
 export type FlyResult = {
 	velocity: Vector3,
@@ -87,7 +91,7 @@ function GliderPhysics.newState(yaw: number): State
 end
 
 function GliderPhysics.newHealth(): Health
-	return { hearts = Config.WingHearts, invulnerableUntil = -math.huge, scrapeTime = 0, lastContact = -math.huge }
+	return { hearts = Config.WingHearts, invulnerableUntil = -math.huge, scrapeTime = 0, lastContact = -math.huge, bounces = {}, lastBounce = -math.huge }
 end
 
 -- ── Entradas ──────────────────────────────────────────────────────────
@@ -266,6 +270,54 @@ function GliderPhysics.hurt(health: Health, into: number, dt: number, now: numbe
 	return if health.hearts <= 0 then "crash" else "impact"
 end
 
+-- Rebote contra arenisca (paredes híbridas de la ranura). Un golpe fuerte es un golpe normal (hurt). Un roce
+-- es un rebote: frena, empuja más que un contacto normal y no quita nada… salvo que se encadenen
+-- Config.SandstoneChain rebotes en Config.SandstoneChainWindow s (ir de pared en pared sin girar). El contacto
+-- continuo durante SandstoneBounceGap sigue siendo el mismo rebote.
+function GliderPhysics.rebound(state: State, health: Health, into: number, normal: Vector3, dt: number, now: number): Event?
+	if into <= 0 then
+		return nil
+	end
+	if into >= Config.SandstoneImpactSpeed then
+		-- Golpe de verdad: cuesta un corazón y la cadena empieza de cero (el mismo contacto no es un rebote más).
+		health.lastBounce = now
+		health.bounces = {}
+		return GliderPhysics.hurt(health, into, dt, now, false)
+	end
+	health.lastContact = now
+	local fresh = now - health.lastBounce > Config.SandstoneBounceGap
+	health.lastBounce = now
+	if not fresh then
+		return "scrape"
+	end
+	state.speed *= 1 - Config.SandstoneSpeedLoss
+	state.push = normal * Config.SandstonePush
+	-- El rebote deja el ala paralela a la pared (sin el giro que traía): se sale "¡boing!" y no en ping-pong.
+	local along = Vector3.new(normal.Z, 0, -normal.X)
+	if along:Dot(forwardOf(state.yaw)) < 0 then
+		along = -along
+	end
+	if along.Magnitude > 1e-3 then
+		state.yaw += unwrap(GliderMath.yawOf(along.Unit) - state.yaw)
+	end
+	state.turnRate = 0
+	local recent = {}
+	for _, at in health.bounces do
+		if now - at <= Config.SandstoneChainWindow then
+			table.insert(recent, at)
+		end
+	end
+	table.insert(recent, now)
+	health.bounces = recent
+	if #recent >= Config.SandstoneChain and now >= health.invulnerableUntil then
+		health.bounces = {}
+		health.hearts -= 1
+		health.invulnerableUntil = now + Config.InvulnerableTime
+		return if health.hearts <= 0 then "crash" else "impact"
+	end
+	return "bounce"
+end
+
 -- Sin contacto: el roce acumulado se va olvidando.
 function GliderPhysics.calm(health: Health, dt: number, now: number)
 	if now - health.lastContact > 0.5 then
@@ -300,7 +352,7 @@ end
 -- Techo (tope de subida), cojín del suelo (tope de bajada) y contacto de frente o de lado.
 -- landing = recorrido terminado: cualquier superficie de debajo cuenta como suelo para aterrizar.
 function GliderPhysics.sense(state: State, position: Vector3, velocity: Vector3, dims: Dimensions, dt: number, params: RaycastParams, landing: boolean?): Sense
-	local sense: Sense = { maxVertical = math.huge, minVertical = -math.huge, floorGap = nil, contact = nil, harmless = false }
+	local sense: Sense = { maxVertical = math.huge, minVertical = -math.huge, floorGap = nil, contact = nil, harmless = false, sandstone = false }
 	sense.maxVertical = GliderPhysics.ceilingLimit(state, position, dims, params)
 
 	-- Suelo (cualquier superficie que mire hacia arriba): cojín que levanta el ala. Al final del recorrido es
@@ -324,6 +376,7 @@ function GliderPhysics.sense(state: State, position: Vector3, velocity: Vector3,
 		if hit and not isCeiling(hit) then
 			sense.contact = hit
 			sense.harmless = isHarmless(hit)
+			sense.sandstone = not sense.harmless and hit.Instance:GetAttribute("Kind") == "Sandstone"
 			return sense
 		end
 	end
@@ -336,6 +389,7 @@ function GliderPhysics.sense(state: State, position: Vector3, velocity: Vector3,
 		if hit and not isCeiling(hit) then
 			sense.contact = hit
 			sense.harmless = isHarmless(hit)
+			sense.sandstone = not sense.harmless and hit.Instance:GetAttribute("Kind") == "Sandstone"
 			return sense
 		end
 	end
@@ -354,7 +408,22 @@ function GliderPhysics.fly(state: State, health: Health, liftInput: number, bala
 		return result
 	end
 	GliderPhysics.step(state, liftInput, balanceInput, dt, sense.maxVertical, sense.minVertical, options.assistTurn or 0)
-	if sense.contact then
+	if sense.contact and sense.sandstone then
+		-- Arenisca: la pared es una sucesión de piezas rectas; su normal es siempre la de la cara interior (nunca
+		-- la de la punta de una pieza en una curva, que "miraría" de frente al ala en la ranura).
+		local wall = sense.contact.Instance
+		local normal = wall.CFrame.RightVector
+		if (position - wall.Position):Dot(normal) < 0 then
+			normal = -normal
+		end
+		local into = GliderPhysics.contact(state, normal)
+		local event = GliderPhysics.rebound(state, health, into, normal, dt, options.now)
+		result.event = if options.practice and (event == "impact" or event == "crash") then "bonk" else event
+		if options.practice and event ~= "bounce" then
+			health.hearts = Config.WingHearts -- práctica: nunca quita corazones
+		end
+		result.contact = sense.contact
+	elseif sense.contact then
 		local into = GliderPhysics.contact(state, sense.contact.Normal)
 		if options.practice then
 			result.event = if into >= Config.ImpactSpeed and not sense.harmless then "bonk" elseif into > 0 then "scrape" else nil

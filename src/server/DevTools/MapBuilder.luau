@@ -58,10 +58,12 @@ local CHAPTER_EXTRAS: { [number]: { string } } = {
 }
 local MAX_SEGMENT = 300 -- largo máximo de cada pieza de pared/suelo en rectas
 local MAX_TURN_PER_SEGMENT = math.rad(4) -- en curvas, una pieza cada 4° de giro
-local ROUTE_SPACING = 150 -- puntos de la línea ideal en los tramos sin obstáculos
+local ROUTE_SPACING = 150
+local SLOT = { width = 56, narrow = 50, height = 44 } -- la ranura de Slot Canyon (el ala mide 32 de punta a punta) -- puntos de la línea ideal en los tramos sin obstáculos
 
 local COLORS = {
 	Cliff = Color3.fromRGB(128, 116, 104), -- paredes del corredor y acantilados
+	Sandstone = Color3.fromRGB(214, 128, 78), -- paredes de la ranura (rebotan: GliderPhysics.rebound)
 	Ground = Color3.fromRGB(92, 116, 76), -- suelo (mortal)
 	Ceiling = Color3.fromRGB(175, 215, 255), -- techo semitransparente (se roza)
 	Obstacle = Color3.fromRGB(215, 80, 60), -- lomas, vigas y salientes
@@ -76,6 +78,7 @@ local COLORS = {
 	Rock = Color3.fromRGB(115, 100, 88),
 	Beacon = Color3.fromRGB(255, 200, 90),
 	Finish = Color3.fromRGB(120, 255, 140),
+	Sign = Color3.fromRGB(34, 28, 24), -- carteles (visual): fondo oscuro, texto claro
 }
 local STYLE = {
 	Ceiling = { transparency = 0.65, noShadow = true },
@@ -87,6 +90,7 @@ local STYLE = {
 	ExitGlow = { neon = true, visual = true, transparency = 0.2 },
 	Finish = { neon = true, visual = true },
 	Beacon = { neon = true },
+	Sign = { visual = true },
 }
 local BEACON_COLORS = {
 	Color3.fromRGB(255, 120, 120),
@@ -200,7 +204,8 @@ local function frameCFrame(f): CFrame
 end
 
 -- Órdenes: { kind = "straight", length } | { kind = "arc", angle (grados, + izquierda), radius }
--- Cualquier orden acepta rise (subida total), width y height (cambian de forma progresiva).
+-- Cualquier orden acepta rise (subida total), width y height (cambian de forma progresiva) y wall = "Sandstone"
+-- (paredes de arenisca de ese tramo: rebotan, GliderPhysics.rebound; la ranura de Slot Canyon).
 -- { kind = "mark", name } guarda la distancia de ese punto para colocar obstáculos respecto a un tramo.
 local function tracePath(start: Vector3, heading: number, width: number, height: number, commands)
 	local frames = { { s = 0, pos = start, heading = heading, width = width, height = height } }
@@ -223,7 +228,7 @@ local function tracePath(start: Vector3, heading: number, width: number, height:
 			h += dh
 			s += dl
 			local k = i / steps
-			table.insert(frames, { s = s, pos = pos, heading = h, width = w0 + (w1 - w0) * k, height = h0 + (h1 - h0) * k })
+			table.insert(frames, { s = s, pos = pos, heading = h, width = w0 + (w1 - w0) * k, height = h0 + (h1 - h0) * k, wall = command.wall })
 		end
 		w, hh = w1, h1
 	end
@@ -264,6 +269,7 @@ local function segments(frames)
 				or math.abs(nSlope - slope) > 0.01
 				or math.abs(n.width - a.width) > 0.5
 				or math.abs(n.height - a.height) > 0.5
+				or n.wall ~= frames[j].wall
 				or n.s - a.s > MAX_SEGMENT
 			then
 				break
@@ -311,7 +317,10 @@ local function buildTube(parent: Instance, frames, opts)
 			local top = math.max(a.pos.Y + opts.top(a), b.pos.Y + opts.top(b))
 			local dir = flatB - flatA
 			local mid = (flatA + flatB) / 2 + Vector3.new(0, (bottom + top) / 2, 0)
-			newPart(shell, if side < 0 then "WallLeft" else "WallRight", "Cliff", Vector3.new(WALL_T, top - bottom, dir.Magnitude + 6), CFrame.lookAt(mid, mid + dir))
+			local wall = newPart(shell, if side < 0 then "WallLeft" else "WallRight", b.wall or "Cliff", Vector3.new(WALL_T, top - bottom, dir.Magnitude + 6), CFrame.lookAt(mid, mid + dir))
+			if b.wall then
+				wall:SetAttribute("Clearance", math.min(a.width, b.width)) -- ranura: el vestido no sobresale
+			end
 		end
 	end
 	return shell
@@ -421,6 +430,30 @@ local function makeContext(level: Model, frames, marks, scale: number?)
 	function ctx.guide(s, u, v, w, h)
 		local f = at(s)
 		circleRing(guides, nextName("Ring"), "Guide", frameCFrame(f) * CFrame.new(u, v, 0), math.min(w or 120, h or 85) / 2, 4, 20)
+	end
+
+	-- CARTEL (visual) de w × h en (s, u, v), mirando al ala que llega: texto grande (en inglés) con borde de color.
+	function ctx.sign(s, u, v, w, h, text, color)
+		local board = newPart(features, nextName("Sign"), "Sign", Vector3.new(w, h, 1), frameCFrame(at(s)) * CFrame.new(u, v, 0))
+		for _, edge in { { 0, h / 2 }, { 0, -h / 2 } } do
+			local stripe = newPart(features, nextName("SignEdge"), "Chevron", Vector3.new(w + 2, 1.6, 1.4), frameCFrame(at(s)) * CFrame.new(u + edge[1], v + edge[2], 0))
+			stripe.Color = color or COLORS.Guide
+		end
+		local gui = Instance.new("SurfaceGui")
+		gui.Face = Enum.NormalId.Back -- mira hacia el ala que llega
+		gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+		gui.PixelsPerStud = 8
+		gui.LightInfluence = 0
+		gui.Parent = board
+		local label = Instance.new("TextLabel")
+		label.BackgroundTransparency = 1
+		label.Size = UDim2.fromScale(1, 1)
+		label.Font = Enum.Font.GothamBlack
+		label.TextScaled = true
+		label.TextColor3 = color or COLORS.Guide
+		label.Text = text
+		label.Parent = gui
+		return board
 	end
 
 	-- COLINA en el suelo (cuña de subida + cuña de bajada): hay que pasar por ENCIMA.
@@ -1421,30 +1454,58 @@ local LEVELS = {
 			c.boostRing(a + 1620, 0, 20)
 		end,
 	},
-	{ -- 18 · Switchbacks — horquillas. Curvas cerradas (radio 130) que suben y bajan: girar subiendo a la
-		-- izquierda lo hace el izquierdo, bajando a la derecha el izquierdo al centro… en cada horquilla trabaja uno.
-		-- Final: ventana arriba-izquierda y abajo-derecha seguidas.
-		title = "Switchbacks",
-		tagline = "Every hairpin, a new job",
+	{ -- 18 · Slot Canyon — la ranura. La sala de mesetas acaba en una pared gigante con una grieta de 50 × 42 (el ala
+		-- mide 32): "¿¿por AHÍ??". Dentro, curvas suaves (un toque), un falso respiro (se ensancha a 120…) y la
+		-- segunda ranura, aún más estrecha y con curvas que suben y bajan (cada una la hace uno solo). Las paredes
+		-- son de arenisca: un roce rebota ("BOING!") y frena sin daño; un golpe de frente o tres rebotes seguidos
+		-- cuestan un corazón. Final: la ranura revienta en un cañón enorme.
+		title = "Slot Canyon",
+		tagline = "Suck it in!",
+		intro = "NEW: it's a tight fit... sandstone walls bounce you!",
 		width = 220,
 		height = 180,
 		path = {
-			{ kind = "straight", length = 250 },
-			{ kind = "arc", angle = 60, radius = 130, rise = 30 },
-			{ kind = "straight", length = 120 },
-			{ kind = "arc", angle = -120, radius = 130, rise = -60 },
-			{ kind = "straight", length = 120 },
-			{ kind = "arc", angle = 120, radius = 130, rise = 60 },
-			{ kind = "straight", length = 120 },
-			{ kind = "arc", angle = -60, radius = 160, rise = -30 },
-			{ kind = "mark", name = "fin" },
-			{ kind = "straight", length = 740 },
+			{ kind = "straight", length = 200 },
+			{ kind = "straight", length = 100, width = 360, height = 380 },
+			{ kind = "straight", length = 220 },
+			{ kind = "straight", length = 2, width = SLOT.width, height = SLOT.height, wall = "Sandstone" },
+			{ kind = "mark", name = "slot1" },
+			{ kind = "straight", length = 110, wall = "Sandstone" },
+			{ kind = "arc", angle = 22, radius = 340, wall = "Sandstone" },
+			{ kind = "arc", angle = -44, radius = 340, wall = "Sandstone" },
+			{ kind = "arc", angle = 22, radius = 340, wall = "Sandstone" },
+			{ kind = "straight", length = 50, wall = "Sandstone" },
+			{ kind = "straight", length = 40, width = 120, height = 90, wall = "Sandstone" },
+			{ kind = "mark", name = "relief" },
+			{ kind = "straight", length = 110, wall = "Sandstone" },
+			{ kind = "straight", length = 40, width = SLOT.narrow, height = SLOT.height, wall = "Sandstone" },
+			{ kind = "mark", name = "slot2" },
+			{ kind = "arc", angle = 30, radius = 250, rise = 22, wall = "Sandstone" },
+			{ kind = "arc", angle = -60, radius = 250, wall = "Sandstone" },
+			{ kind = "arc", angle = 30, radius = 250, rise = -22, wall = "Sandstone" },
+			{ kind = "straight", length = 70, wall = "Sandstone" },
+			{ kind = "mark", name = "burst" },
+			{ kind = "straight", length = 2, width = 380, height = 400 },
+			{ kind = "mark", name = "out" },
+			{ kind = "straight", length = 280 },
+			{ kind = "straight", length = 120, width = 220, height = 180 },
+			{ kind = "straight", length = 100 },
 		},
 		features = function(c)
-			local fin = c.mark("fin")
-			c.feathers(250 + 136 + 120 + 90, 250 + 136 + 120 + 180, 3, 35, 0, 35, 0) -- por dentro de la 2.ª horquilla
-			c.window(fin + 300, -40, 25, 120, 90)
-			c.window(fin + 560, 40, -25, 120, 90)
+			local slot1, slot2 = c.mark("slot1"), c.mark("slot2")
+			-- La pared gigante con la grieta y el cartel.
+			c.window(slot1 - 1, 0, 0, SLOT.width, SLOT.height, { halfW = 184, bottom = -200, top = 200 })
+			c.sign(slot1 - 3, 0, SLOT.height / 2 + 34, 90, 22, "⚠ 56 STUDS", Color3.fromRGB(255, 200, 60))
+			-- Línea ideal densa por el centro de la ranura (sin avisos: la ranura ya es el aviso).
+			for s = slot1 + 20, c.mark("burst") - 10, 30 do
+				c.point(s, 0, 0, nil, false)
+			end
+			c.feathers(c.mark("relief") + 20, c.mark("relief") + 90, 3, 0, 0, 0, 0)
+			-- La salida: la ranura revienta en el cañón.
+			local burst = c.mark("burst")
+			c.window(burst + 1, 0, 0, SLOT.narrow, SLOT.height, { halfW = 194, bottom = -210, top = 210 })
+			c.boostRing(c.mark("out") + 110, 0, 30)
+			c.feathers(c.mark("out") + 170, c.mark("out") + 260, 3, 0, 40, 0, 20)
 		end,
 	},
 	{ -- 19 · Sandstorm — la tormenta. Viento lateral mientras se apunta a ventanas (una contra el viento, otra a
@@ -2356,6 +2417,11 @@ local function buildCourse(root: Instance, levels, startPos: Vector3, options): 
 		level:SetAttribute("Title", spec.title)
 		level:SetAttribute("Tagline", spec.tagline) -- frase de identidad (tarjeta de título del HUD)
 		level:SetAttribute("Intro", spec.intro) -- aviso de algo nuevo al empezar el nivel (p. ej. el impulso)
+		for _, command in spec.path do
+			if command.wall then
+				level:SetAttribute("Tight", true) -- ranura (FlightTester.TIGHT_RULE)
+			end
+		end
 		level:SetAttribute("Length", math.floor(last.s))
 		level:SetAttribute("Width", spec.width * scale)
 		level:SetAttribute("Height", spec.height * scale)

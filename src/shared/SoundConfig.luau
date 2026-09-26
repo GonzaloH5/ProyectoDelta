@@ -18,6 +18,11 @@ local SoundConfig: { [string]: Slot } = {
 	Countdown = { id = "rbxasset://sounds/electronicpingshort.wav", volume = 0.5, pitch = 1 }, -- 3 · 2 · 1
 	Go = { id = "rbxasset://sounds/electronicpingshort.wav", volume = 0.6, pitch = 1.5 }, -- ¡despegue!
 	Impact = { id = "rbxasset://sounds/action_jump_land.mp3", volume = 0.9, pitch = 0.7 }, -- pierde un corazón
+	Bounce = { id = "rbxasset://sounds/action_jump.mp3", volume = 0.7, pitch = 0.6 }, -- rebote contra arenisca ("boing")
+	CueUp = { id = "rbxasset://sounds/electronicpingshort.wav", volume = 0.3, pitch = 1.6 }, -- aviso: hay que subir
+	CueDown = { id = "rbxasset://sounds/electronicpingshort.wav", volume = 0.3, pitch = 0.9 }, -- aviso: hay que bajar
+	CueSide = { id = "rbxasset://sounds/electronicpingshort.wav", volume = 0.25, pitch = 1.25 }, -- aviso: hay que girar
+	GateBeep = { id = "rbxasset://sounds/electronicpingshort.wav", volume = 0.25, pitch = 2.1 }, -- compuerta: bip… bip… ¡ya!
 	WingLost = { id = "", volume = 0.8 }, -- sin corazones: el ala se pierde
 	Respawn = { id = "rbxasset://sounds/electronicpingshort.wav", volume = 0.35, pitch = 0.75 }, -- reaparece
 	NearMiss = { id = "rbxasset://sounds/swordlunge.wav", volume = 0.5, pitch = 1.1 }, -- "Close!"

@@ -1,7 +1,8 @@
 -- Medidor de RITMO: vuela cada nivel con el piloto completo en modo juego (corrientes, contactos que resbalan) y
 -- mide qué tienen que hacer los dos jugadores y cada cuánto:
 --   · activo = hace falta algo (subir/bajar más de un 30 % o girar con balance > 0.25) o elegir el momento: el
---     último segundo antes de cruzar un obstáculo móvil (compuerta, aspa, tronco) y el paso por él
+--     último segundo antes de cruzar un obstáculo móvil (compuerta, aspa, tronco) y el paso por él, o ir por una
+--     ranura (paredes de arenisca a los dos lados: pilotaje fino continuo aunque los gestos sean pequeños)
 --   · muerto = tramo más largo seguido sin tener que hacer nada (s)
 --   · avisos/min = gestos por minuto; cada gesto se clasifica por quién se mueve:
 --       igual (los dos hacia el mismo lado: subir/bajar) · opuesto (uno fuera y otro dentro: girar/cambio) ·
@@ -42,9 +43,28 @@ local function measure(index: number, root: Instance)
 	local level = root:FindFirstChild(string.format("Level%02d", index))
 	local movers = if level and level:FindFirstChild("Movers") then level.Movers:GetChildren() else {}
 	local timingReach = Config.ForwardSpeed * 1.2 -- studs antes (y un poco después) del plano del obstáculo
+	local slotParams = RaycastParams.new()
+	slotParams.FilterType = Enum.RaycastFilterType.Include
+	slotParams.FilterDescendantsInstances = { level :: Instance }
+	local function inSlot(position: Vector3): boolean
+		if not (level and level:GetAttribute("Tight")) then
+			return false
+		end
+		local sides = 0
+		for _, direction in { Vector3.xAxis, -Vector3.xAxis, Vector3.zAxis, -Vector3.zAxis } do
+			local hit = workspace:Raycast(position, direction * 40, slotParams)
+			if hit and hit.Instance:GetAttribute("Kind") == "Sandstone" then
+				sides += 1
+			end
+		end
+		return sides >= 2
+	end
 	local function timing(position: Vector3?): boolean
 		if not position then
 			return false
+		end
+		if inSlot(position) then
+			return true
 		end
 		for _, part in movers do
 			if part:IsA("BasePart") then

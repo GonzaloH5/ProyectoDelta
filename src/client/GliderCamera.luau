@@ -27,6 +27,7 @@ local tracked = Vector3.zero -- posición del ala predicha localmente (sin tiron
 local savedFieldOfView = 70
 local shake = 0
 local shakeClock = 0
+local lastBounces = 0
 local lastImpacts = 0
 local occlusion = RaycastParams.new()
 occlusion.FilterType = Enum.RaycastFilterType.Exclude
@@ -69,6 +70,8 @@ function GliderCamera.start(root: BasePart)
 	local glider = root.Parent
 	local impacts = glider and glider:GetAttribute("Impacts")
 	lastImpacts = if type(impacts) == "number" then impacts else 0
+	local bounces = glider and glider:GetAttribute("Bounces")
+	lastBounces = if type(bounces) == "number" then bounces else 0
 	savedFieldOfView = camera.FieldOfView
 	camera.CameraType = Enum.CameraType.Scriptable
 	camera.FieldOfView = Config.CameraFieldOfView
@@ -155,6 +158,11 @@ function GliderCamera.update(root: BasePart, dt: number)
 		shake = math.max(shake, Config.CameraShakeImpact)
 	end
 	lastImpacts = if type(impacts) == "number" then impacts else lastImpacts
+	local bounces = glider and glider:GetAttribute("Bounces")
+	if type(bounces) == "number" and bounces > lastBounces then
+		shake = math.max(shake, Config.CameraShakeImpact * 0.6)
+	end
+	lastBounces = if type(bounces) == "number" then bounces else lastBounces
 	if glider and glider:GetAttribute("Scraping") == true then
 		shake = math.max(shake, Config.CameraShakeScrape)
 	end

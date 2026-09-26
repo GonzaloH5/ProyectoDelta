@@ -76,6 +76,13 @@ FlightTester.NOVICE_GAME.mode = "game"
 FlightTester.CALM_GAME = table.clone(FlightTester.CALM)
 FlightTester.CALM_GAME.name = "tranq·j"
 FlightTester.CALM_GAME.mode = "game"
+-- El completo en el juego (referencia de tiempo para el rígido).
+FlightTester.FULL_GAME = table.clone(FlightTester.FULL)
+FlightTester.FULL_GAME.name = "completo·j"
+FlightTester.FULL_GAME.mode = "game"
+-- Rígido: sube y baja bien pero NO gira nunca (solo la asistencia). En una ranura (Slot Canyon) tiene que ir
+-- mucho más lento (rebotes) o perder el ala: demuestra que no se pasa sin moverse.
+FlightTester.STIFF = { name = "rígido·j", mode = "game", maxTurn = 0, maxLift = 1, lookahead = 100, reaction = 0.3, deadband = 0.15 }
 -- Dúo descuidado: cada uno con su retraso, se coloca con error y mira poco adelante (tools/sim/drivers/sloppy).
 FlightTester.SLOPPY = { name = "descuidado", mode = "game", maxTurn = 1, maxLift = 1, lookahead = 80, reaction = 0.6, reactions = { 0.5, 0.75 }, deadband = 0.6, jitter = 0.9, seed = 1 }
 
@@ -170,7 +177,7 @@ function FlightTester.run(levelIndex: number, routeName: string?, pilot, root: I
 	overlap.FilterDescendantsInstances = { probe, table.unpack(params.FilterDescendantsInstances) }
 	local maxBalance, minLift, maxLift = 0, 1, 0
 	local result = "OK"
-	local hits, losses = 0, 0
+	local hits, losses, bounces = 0, 0, 0
 	-- Modo juego: punto seguro (posición + tramo de la ruta) y tiempo de vuelo limpio.
 	local safe = { pos = pos, yaw = state.yaw, segment = 1 }
 	local clean, sinceSafe = 0, 0
@@ -271,6 +278,9 @@ function FlightTester.run(levelIndex: number, routeName: string?, pilot, root: I
 				state.boost = if pumping then Config.PumpBoostBoth else 0
 			end
 			local flown = GliderPhysics.fly(state, health, liftInput, balanceInput, pos, dims, DT, params, { now = t, assistTurn = assistTurn, wind = GliderPhysics.windAt(windZones, pos) })
+			if flown.event == "bounce" then
+				bounces += 1
+			end
 			if flown.event == "impact" or flown.event == "crash" then
 				hits += 1
 				if pilot.onHit then
@@ -383,11 +393,11 @@ function FlightTester.run(levelIndex: number, routeName: string?, pilot, root: I
 		mover.part.CFrame = Movers.cframeAt(mover.params, 0) -- vuelve a su posición de edición
 	end
 	local detail = if gameMode
-		then string.format("golpes %d · alas perdidas %d", hits, losses)
+		then string.format("golpes %d · alas perdidas %d%s", hits, losses, if bounces > 0 then string.format(" · rebotes %d", bounces) else "")
 		else string.format("margen mín %s", if minMargin == math.huge then ">32" else string.format("<%d%s", minMargin, closest))
 	-- Segundo valor (para checkRules): minMargin = menor inflado del ala que aún tocaba algo (huge = nada a 32).
 	return string.format("%s %-8s %-10s %-58s | %5.1fs | %s | balance máx %.2f | lift %.2f–%.2f", levelName, routeName or "", pilot.name, result, t, detail, maxBalance, minLift, maxLift),
-		{ ok = result == "OK", minMargin = minMargin, hits = hits, losses = losses, time = t }
+		{ ok = result == "OK", minMargin = minMargin, hits = hits, losses = losses, bounces = bounces, time = t }
 end
 
 function FlightTester.runAll(): string
@@ -426,6 +436,11 @@ FlightTester.RULES = {
 	{ upTo = 50, checks = { { FlightTester.FULL, 4 }, { FlightTester.CALM_GAME, 0 } } },
 }
 
+-- Ranura (niveles con paredes de arenisca, atributo Tight: Slot Canyon): el completo pasa con ≥ 3 (el túnel
+-- mide ~50 y el ala 32), el novato llega en el juego con ≤ 1 golpe (los rebotes no cuentan: son el error
+-- gracioso) y el rígido (no gira) pierde el ala o tarda ≥ 40 % más que el completo: hay que moverse.
+FlightTester.TIGHT_RULE = { checks = { { FlightTester.FULL, 3 }, { FlightTester.NOVICE_GAME, 1 }, { FlightTester.STIFF, "slower", 1.4 } } }
+
 -- Tutorial (Map.Tutorial, Flight School): es la primera vez que se vuela; el novato llega en el juego sin golpes
 -- y el tranquilo pasa con ≥ 8.
 FlightTester.TUTORIAL_RULE = { upTo = math.huge, checks = { { FlightTester.NOVICE_GAME, 0 }, { FlightTester.CALM, 8 } } }
@@ -437,6 +452,10 @@ local function check(map: Instance?, from: number?, to: number?, fixedTier): str
 	local index = from or 1
 	while map and map:FindFirstChild(string.format("Level%02d", index)) and index <= (to or math.huge) do
 		local tier = fixedTier
+		local levelModel = map:FindFirstChild(string.format("Level%02d", index))
+		if not tier and levelModel and levelModel:GetAttribute("Tight") == true then
+			tier = FlightTester.TIGHT_RULE
+		end
 		for _, rule in FlightTester.RULES do
 			if not tier and index <= rule.upTo then
 				tier = rule
@@ -463,7 +482,15 @@ local function check(map: Instance?, from: number?, to: number?, fixedTier): str
 				flown.timeOffset = offset
 				local offsetLine, info = FlightTester.run(index, if run.route == "Route" then nil else run.route, flown, map)
 				local ok
-				if pilot.mode == "game" then
+				if required == "slower" then
+					-- Rígido: pierde el ala o tarda ≥ factor × lo que tarda el completo en el juego.
+					local reference = table.clone(FlightTester.FULL_GAME)
+					reference.timeOffset = offset
+					local _, best = FlightTester.run(index, if run.route == "Route" then nil else run.route, reference, map)
+					ok = (not info.ok) or info.time >= best.time * check[3]
+					need = string.format("≥%.0f%% más lento", (check[3] - 1) * 100)
+					offsetLine ..= string.format(" (completo·j %.1fs)", best.time)
+				elseif pilot.mode == "game" then
 					ok = info.ok and info.hits <= required
 					need = string.format("≤%d golpes", required)
 				else

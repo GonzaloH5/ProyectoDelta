@@ -43,6 +43,7 @@ local STYLE = {
 	CrystalTip = { neon = true },
 	Ember = { neon = true },
 	WindVeil = { neon = true, transparency = 0.9, visual = true, noShadow = true },
+	SlotLight = { neon = true, visual = true, noShadow = true },
 }
 
 local function palette(biome)
@@ -61,6 +62,7 @@ local function palette(biome)
 		Flower = biome.flowers[1],
 		WoodDark = biome.stoneDark,
 		Lamp = rgb(255, 205, 120),
+		SlotLight = rgb(255, 214, 140),
 		Cloud = biome.cloud,
 		Stone = biome.stone,
 		Sign = biome.stoneDark,
@@ -219,6 +221,30 @@ local function wall(ctx, parent, part: BasePart, side: number, isValley: boolean
 	if isValley then
 		cap(ctx, parent, part, 160)
 	end
+end
+
+-- Pared de la ranura (Kind "Sandstone", Slot Canyon): arenisca a franjas ENRASADAS (dentro de la pared: en un
+-- túnel de ~50 nada puede sobresalir) y una tira de luz que dibuja la curva por delante (visual, no choca).
+local SANDSTONE_BANDS = { rgb(222, 140, 84), rgb(196, 108, 64), rgb(236, 170, 110), rgb(176, 92, 58) }
+local function sandstoneWall(ctx, parent, part: BasePart, side: number)
+	part.Material = Enum.Material.Sandstone
+	part.Color = SANDSTONE_BANDS[1]
+	local size = part.Size
+	local face = side * (size.X / 2 - 0.45) -- franja de 1 de grueso: su cara queda 0,05 dentro de la pared
+	local y = -size.Y / 2 + WALL_FOOT
+	local index = 1
+	while y < size.Y / 2 - ctx.rim do
+		local height = 6 + (index * 7) % 9
+		local band = ctx.kit.part(parent, "Band", "Strata", Vector3.new(1, height, size.Z + 0.2), part.CFrame * CFrame.new(face, y + height / 2, 0))
+		band.Material = Enum.Material.Sandstone
+		band.Color = SANDSTONE_BANDS[index % #SANDSTONE_BANDS + 1]
+		y += height
+		index += 1
+	end
+	-- Tira de luz a media altura del paso: se ve la curva antes de llegar.
+	local lightY = -size.Y / 2 + WALL_FOOT + 14 -- 14 sobre el suelo de la ranura
+	local light = ctx.kit.part(parent, "SlotLight", "SlotLight", Vector3.new(0.4, 1.2, size.Z), part.CFrame * CFrame.new(side * (size.X / 2 + 0.25), lightY, 0))
+	light.Color = rgb(255, 214, 140)
 end
 
 local function cliffFace(ctx, parent, part: BasePart, sides)
@@ -856,6 +882,8 @@ function MapDresser.dress(model: Instance, biome, options): number
 			elseif FACE_SIDES[parentName] then
 				cliffFace(ctx, folder("Faces"), part, FACE_SIDES[parentName])
 			end
+		elseif kind == "Sandstone" then
+			sandstoneWall(ctx, folder("Walls"), part, if part.Name == "WallLeft" then 1 else -1)
 		elseif kind == "Ground" then
 			part.Color = biome.ground
 			if parentName == "Valley" then

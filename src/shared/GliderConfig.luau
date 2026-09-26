@@ -126,6 +126,14 @@ local GliderConfig = {
 	ContactPush = 10, -- studs/s de empujón de separación al tocar
 	ContactPushDecay = 4, -- rapidez con que se desvanece ese empujón (1/s)
 	ContactSteer = 0.5, -- fracción del giro hacia la dirección de la superficie en cada contacto
+	-- Paredes de arenisca (Kind "Sandstone", la ranura de Slot Canyon): híbridas. Un roce rebota y frena sin daño;
+	-- un golpe fuerte quita corazón como siempre; SandstoneChain rebotes en SandstoneChainWindow s también.
+	SandstoneSpeedLoss = 0.25, -- fracción de velocidad que se pierde en cada rebote
+	SandstonePush = 16, -- studs/s de empujón de rebote (más que ContactPush: se nota el "boing")
+	SandstoneImpactSpeed = 34, -- studs/s contra la pared que cuentan como golpe (≈35°: más que ImpactSpeed, es un túnel)
+	SandstoneChain = 3, -- rebotes seguidos que cuestan un corazón
+	SandstoneChainWindow = 4, -- segundos en los que cuentan como seguidos
+	SandstoneBounceGap = 0.35, -- segundos de contacto continuo que siguen siendo el mismo rebote
 	HarmlessNormalY = 0.7, -- superficies con la normal más vertical que esto son "suelo" (sin daño)
 	HitboxSpanFactor = 0.75, -- el núcleo que choca es más estrecho que el ala (las puntas perdonan)
 	HitboxFeetFactor = 0.7, -- y más corto por debajo (los pies de los jugadores perdonan)
