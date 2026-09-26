@@ -1492,7 +1492,7 @@ local LEVELS = {
 			{ kind = "straight", length = 100 },
 		},
 		features = function(c)
-			local slot1, slot2 = c.mark("slot1"), c.mark("slot2")
+			local slot1 = c.mark("slot1")
 			-- La pared gigante con la grieta y el cartel.
 			c.window(slot1 - 1, 0, 0, SLOT.width, SLOT.height, { halfW = 184, bottom = -200, top = 200 })
 			c.sign(slot1 - 3, 0, SLOT.height / 2 + 34, 90, 22, "⚠ 56 STUDS", Color3.fromRGB(255, 200, 60))

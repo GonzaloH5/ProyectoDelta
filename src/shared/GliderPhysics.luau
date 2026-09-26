@@ -418,7 +418,8 @@ function GliderPhysics.fly(state: State, health: Health, liftInput: number, bala
 		end
 		local into = GliderPhysics.contact(state, normal)
 		local event = GliderPhysics.rebound(state, health, into, normal, dt, options.now)
-		result.event = if options.practice and (event == "impact" or event == "crash") then "bonk" else event
+		local practiceHit = options.practice and (event == "impact" or event == "crash")
+		result.event = (if practiceHit then "bonk" else event) :: Event?
 		if options.practice and event ~= "bounce" then
 			health.hearts = Config.WingHearts -- práctica: nunca quita corazones
 		end
