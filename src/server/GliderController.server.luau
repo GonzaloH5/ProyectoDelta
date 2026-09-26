@@ -11,13 +11,12 @@
 -- Las alas y jugadores de distintos dúos no chocan entre sí (CollisionGroups) y cada
 -- cliente ve a los otros dúos ligeramente transparentes (GliderClient).
 --
--- Flight School (tutorial, Map.Tutorial, ~40 s): es el "nivel 0".
---   · En dúo: si alguno de los dos no tiene PlayerStats.TutorialDone, el dúo despega en Flight School y al salir
---     pasa sin volver al lobby a la salida del recorrido (cuenta atrás) y al nivel 1. SKIP = votan los dos.
---   · Solo (práctica con el Coach, TutorialBot): se ofrece la primera vez que alguien entra, mientras busca pareja;
---     al terminar vuelve al lobby.
---   Modo práctica (sin corazones), indicaciones de una palabra y marcas fantasma en la barra del HUD. No cuenta
---   para estadísticas ni clasificación.
+-- Flight School (Map.Tutorial, ~40 s): el principio del recorrido. Si alguno del dúo no tiene
+-- PlayerStats.TutorialDone, el dúo despega ahí; Flight School desemboca en el valle de la StartIsland y, al cruzar
+-- la línea de relevo (el despegue de los veteranos), empieza el recorrido de verdad sin cortes (startCourse).
+-- Si los dos ya lo hicieron, despegan directamente en la StartIsland. SKIP = votan los dos (se reubica el ala).
+-- Modo práctica (sin corazones), indicaciones de una palabra y marcas fantasma en la barra del HUD. No cuenta para
+-- tiempos, estadísticas ni clasificación.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -36,7 +35,7 @@ local LevelStreaming = require(script.Parent.LevelStreaming)
 local MoverService = require(script.Parent.MoverService)
 local Lobby = require(script.Parent.Lobby)
 local PlayerStats = require(script.Parent.PlayerStats)
-local TutorialBot = require(script.Parent.TutorialBot)
+local FlightSchool = require(script.Parent.FlightSchool)
 local remote = Shared:WaitForChild("GliderRemote") :: RemoteEvent
 
 CollisionGroups.setup()
@@ -50,10 +49,10 @@ LevelStreaming.load(tutorialMap)
 MoverService.load(map) -- incluye Map.Tutorial (está dentro de Map)
 DuoLeaderboard.start(mainCourse:count())
 
--- Indicaciones del bot por tramo del tutorial.
-local tutorialCues: { [number]: { TutorialBot.Cue } } = {}
+-- Indicaciones de Flight School por tramo.
+local tutorialCues: { [number]: { FlightSchool.Cue } } = {}
 for index = 1, tutorialCourse:count() do
-	tutorialCues[index] = TutorialBot.cuesOf(tutorialMap and tutorialMap:FindFirstChild(string.format("Level%02d", index)))
+	tutorialCues[index] = FlightSchool.cuesOf(tutorialMap and tutorialMap:FindFirstChild(string.format("Level%02d", index)))
 end
 
 -- La AlaDelta del mapa es la plantilla: marca dónde y cómo sale cada ala. Nadie vuela la original.
@@ -72,7 +71,7 @@ local lastPosition: { [Session]: Vector3 } = {} -- posición del ala en el paso 
 local wasFlying: { [Session]: true } = {} -- volaba en el paso anterior (para contar choques)
 local inCountdown: { [Session]: true } = {} -- en cuenta atrás en el paso anterior (para cargar la zona al empezarla)
 local devRuns: { [Session]: true } = {} -- vuelos de prueba (DevStartLevel): no cuentan para las estadísticas
-local tutorialRuns: { [Session]: "duo" | "bot" } = {} -- vuelos de Flight School (dúo o con el Coach): no cuentan
+local tutorialRuns: { [Session]: true } = {} -- en Flight School: no cuenta para tiempos ni estadísticas
 local skipVotes: { [Session]: { [Player]: true } } = {} -- SKIP en dúo: hace falta que lo pulsen los dos
 local courseOf: { [Session]: Checkpoints.Course } = {}
 local runMedals: { [Session]: { [number]: number } } = {} -- medallas de este vuelo: { [3] = oros, [2] = platas, [1] = bronces }
@@ -83,7 +82,7 @@ local pickups: { [Session]: Pickups } = {}
 local nextId = 0
 
 -- Definidas más abajo (Flight School en dúo).
-local beginMainCourse: (Session) -> ()
+local beginMainCourse: (Session, boolean) -> ()
 local needsFlightSchool: ({ Player }) -> boolean
 local tutorialLaunch: () -> CFrame?
 
@@ -267,10 +266,9 @@ local function startSession(players: { Player })
 	sessions[session] = true
 	if school then
 		courseOf[session] = tutorialCourse
-		tutorialRuns[session] = "duo"
+		tutorialRuns[session] = true
 		session.practice = true
 		session.glider:SetAttribute("Tutorial", true)
-		session.glider:SetAttribute("TutorialDuo", true)
 	else
 		courseOf[session] = mainCourse
 	end
@@ -291,10 +289,11 @@ local function startSession(players: { Player })
 	end
 end
 
--- Fin de Flight School en dúo (o SKIP votado por los dos): sin volver al lobby, el ala aparece en la salida del
--- recorrido con una cuenta atrás y empieza el nivel 1 (cronómetro, medallas y clasificación desde aquí).
-beginMainCourse = function(session: Session)
-	if session.finished or tutorialRuns[session] ~= "duo" then
+-- Fin de Flight School: empieza el recorrido de verdad (cronómetro, medallas y clasificación desde aquí), sin
+-- volver al lobby. Al cruzar la línea de relevo se sigue volando (relocate = false); con SKIP, el ala aparece en el
+-- despegue de los veteranos con una cuenta atrás.
+beginMainCourse = function(session: Session, relocate: boolean)
+	if session.finished or not tutorialRuns[session] then
 		return
 	end
 	local start = map and map:FindFirstChild("StartIsland")
@@ -314,12 +313,15 @@ beginMainCourse = function(session: Session)
 	lastPosition[session] = nil
 	local glider = session.glider
 	glider:SetAttribute("Tutorial", false)
-	glider:SetAttribute("TutorialDuo", nil)
 	glider:SetAttribute("TutorialHint", "")
 	glider:SetAttribute("GhostLeft", nil)
 	glider:SetAttribute("GhostRight", nil)
 	glider:SetAttribute("SkipVotes", nil)
-	session:relocate(launch.CFrame, Config.FlightSchoolCountdown)
+	if relocate then
+		session:relocate(launch.CFrame, Config.FlightSchoolCountdown)
+	else
+		session:startCourse(launch.CFrame)
+	end
 	publishLevel(session)
 	for _, player in session:riders() do
 		PlayerStats.runStarted(player)
@@ -327,38 +329,11 @@ beginMainCourse = function(session: Session)
 	end
 end
 
--- Tutorial para un jugador, con el bot en el otro hueco. Despega en Map.Tutorial.StartIsland.LaunchPoint.
-local function startTutorial(player: Player)
-	local start = tutorialMap and tutorialMap:FindFirstChild("StartIsland")
-	local launch = start and start:FindFirstChild("LaunchPoint")
-	if not (launch and launch:IsA("BasePart")) or tutorialCourse:count() == 0 then
-		warn("[Glider] No hay Map.Tutorial: regenera el mapa con MapBuilder para tener tutorial")
-		return
-	end
-	if player.Parent ~= Players or isBusy(player) or not isAlive(player) then
-		return
-	end
-	local bot = TutorialBot.create()
-	if not bot then
-		return
-	end
-	nextId += 1
-	local session = GliderSession.new(nextId, template, gliderFolder, { player }, onSessionFinished, launch.CFrame, 0)
-	session:addBot(bot, TutorialBot.SIDE)
-	courseOf[session] = tutorialCourse
-	tutorialRuns[session] = "bot"
-	session.practice = true
-	sessions[session] = true
-	session.glider:SetAttribute("Tutorial", true)
-	publishLevel(session)
-	sessionOf[player] = session
-end
-
 -- El ala cruzó un checkpoint: desde aquí reaparece, y ambos ven la pantalla de checkpoint.
 -- Récords (solo vuelos desde la salida): estadísticas de cada jugador y clasificación del dúo.
 local function reachCheckpoint(session: Session, checkpoint: Checkpoints.Checkpoint)
-	if tutorialRuns[session] == "duo" and checkpoint.final then
-		-- Flight School superado en dúo: pantalla de "completado" y, al momento, al nivel 1 (sin lobby).
+	if tutorialRuns[session] and checkpoint.final then
+		-- Línea de relevo: Flight School superado. Pantalla de "completado" y, sin parar, el recorrido de verdad.
 		local info = table.clone(checkpoint.info)
 		info.tutorial = true
 		info.toLevelOne = true
@@ -366,8 +341,7 @@ local function reachCheckpoint(session: Session, checkpoint: Checkpoints.Checkpo
 			remote:FireClient(player, "Checkpoint", info)
 			Analytics.funnel(player, Analytics.STEPS.TutorialFinished, { [Enum.AnalyticsCustomFieldKeys.CustomField01.Name] = "completed" } :: any)
 		end
-		session.checkpoint = checkpoint.index -- no vuelve a cruzarlo mientras espera
-		task.delay(1.2, beginMainCourse, session)
+		beginMainCourse(session, false)
 		return
 	end
 	-- Medalla del nivel superado (antes de setCheckpoint, que reinicia los contadores del nivel):
@@ -446,31 +420,9 @@ for _, player in Players:GetPlayers() do
 	Analytics.funnel(player, Analytics.STEPS.Joined)
 end
 
--- La primera vez que alguien entra (sin TutorialDone guardado) se le ofrece el tutorial en pantalla
--- ("TutorialOffer"); el cliente responde con "TutorialAnswer" (true = jugar). Se espera a que su personaje
--- esté en el lobby; si no aparece en ~30 s o ya está volando, no se ofrece.
-local tutorialOffered: { [Player]: true } = {}
 PlayerStats.onLoaded(function(player: Player, stats: PlayerStats.Stats)
 	if next(stats.Settings) ~= nil and player.Parent == Players then
 		remote:FireClient(player, "Settings", stats.Settings) -- ajustes guardados (volumen, cámara, HUD)
-	end
-	if stats.TutorialDone or tutorialCourse:count() == 0 then
-		return
-	end
-	for _ = 1, 60 do
-		if player.Parent ~= Players or isBusy(player) then
-			return
-		end
-		if isAlive(player) then
-			task.wait(1.5) -- un momento en el lobby antes de preguntar
-			if player.Parent == Players and not isBusy(player) then
-				tutorialOffered[player] = true
-				remote:FireClient(player, "TutorialOffer")
-				Analytics.funnel(player, Analytics.STEPS.TutorialOffered)
-			end
-			return
-		end
-		task.wait(0.5)
 	end
 end)
 
@@ -502,18 +454,6 @@ remote.OnServerEvent:Connect(function(player: Player, kind: unknown, value: unkn
 		PlayerStats.setSettings(player, value) -- se validan allí (claves conocidas, tipos y rangos)
 		return
 	end
-	if kind == "TutorialAnswer" then
-		-- Solo cuenta si se le ofreció: acepte o rechace, ya no se vuelve a ofrecer.
-		if tutorialOffered[player] then
-			tutorialOffered[player] = nil
-			PlayerStats.markTutorialDone(player)
-			Analytics.funnel(player, Analytics.STEPS.TutorialAnswered, { [Enum.AnalyticsCustomFieldKeys.CustomField01.Name] = if value == true then "play" else "skip" } :: any)
-			if value == true then
-				startTutorial(player)
-			end
-		end
-		return
-	end
 	local session = activeSession(player)
 	if not session then
 		return
@@ -531,10 +471,7 @@ remote.OnServerEvent:Connect(function(player: Player, kind: unknown, value: unkn
 			end
 		end
 	elseif kind == "SkipTutorial" then
-		local mode = tutorialRuns[session]
-		if mode == "bot" then
-			session:finish("lobby")
-		elseif mode == "duo" then
+		if tutorialRuns[session] then
 			-- En dúo hacen falta los dos (el nuevo no se queda sin tutorial porque el veterano tenga prisa).
 			local votes = skipVotes[session] or {}
 			votes[player] = true
@@ -550,7 +487,7 @@ remote.OnServerEvent:Connect(function(player: Player, kind: unknown, value: unkn
 				for _, rider in riders do
 					Analytics.funnel(rider, Analytics.STEPS.TutorialFinished, { [Enum.AnalyticsCustomFieldKeys.CustomField01.Name] = "skip" } :: any)
 				end
-				beginMainCourse(session)
+				beginMainCourse(session, true)
 			end
 		end
 	else
@@ -653,28 +590,24 @@ RunService.Heartbeat:Connect(function(rawDt)
 			end
 			session.glider:SetAttribute("RouteAhead", course:lookahead(level, position, Config.CameraRouteLookahead))
 		end
-		local tutorialMode = tutorialRuns[session]
-		if tutorialMode then
+		if tutorialRuns[session] then
 			-- Flight School: lo que haría falta para seguir la línea ideal (subir/bajar y girar) → indicación de una
-			-- palabra, marcas fantasma en la barra (dónde ponerse cada uno) y, con el Coach, su mitad.
+			-- palabra y marcas fantasma en la barra (dónde ponerse cada uno).
 			local state = session.flight.state
 			local flying = state == "Flying"
 			local progress = if flying then course:progress(level, position) else 0
-			local goal = course:lookahead(level, position, TutorialBot.LOOKAHEAD)
-			local balance = if flying then TutorialBot.steer(position, GliderPhysics.forwardOf(session.physics.yaw), goal) else 0
-			local lift = if flying then TutorialBot.liftFor(position, goal, session.physics.speed) else Config.NeutralLiftPoint
-			local cue = TutorialBot.activeCue(tutorialCues[level] or {}, state, progress)
-			if tutorialMode == "bot" then
-				TutorialBot.step(session.slots, cue, balance, lift, session.flight.time, session.completed)
-			end
+			local goal = course:lookahead(level, position, FlightSchool.LOOKAHEAD)
+			local balance = if flying then FlightSchool.steer(position, GliderPhysics.forwardOf(session.physics.yaw), goal) else 0
+			local lift = if flying then FlightSchool.liftFor(position, goal, session.physics.speed) else Config.NeutralLiftPoint
+			local cue = FlightSchool.activeCue(tutorialCues[level] or {}, state, progress)
 			local glider = session.glider
-			local hint = TutorialBot.hintFor(cue, state, session.completed)
+			local hint = FlightSchool.hintFor(cue, state)
 			if glider:GetAttribute("TutorialHint") ~= hint then
 				glider:SetAttribute("TutorialHint", hint)
 			end
 			if publishProgress then
-				local showGhosts = cue ~= nil and cue.ghost and not session.completed
-				local left, right = TutorialBot.ghosts(lift, balance)
+				local showGhosts = cue ~= nil and cue.ghost
+				local left, right = FlightSchool.ghosts(lift, balance)
 				glider:SetAttribute("GhostLeft", if showGhosts then left / Config.BarOuterOffset else nil)
 				glider:SetAttribute("GhostRight", if showGhosts then right / Config.BarOuterOffset else nil)
 			end
@@ -748,5 +681,4 @@ Players.PlayerRemoving:Connect(function(player)
 	messageWindow[player] = nil
 	lastCallout[player] = nil
 	Analytics.forget(player)
-	tutorialOffered[player] = nil
 end)

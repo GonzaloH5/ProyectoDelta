@@ -36,7 +36,8 @@ local DRESS_LEVELS = 50 -- se visten los niveles hasta este (y sus valles); más
 
 local CRUISE = 400 -- altitud del despegue
 local START = Vector3.new(100, CRUISE, 0) -- comienzo del valle inicial (fondo de la StartIsland)
-local LAUNCH_S = 300 -- el despegue está a esta distancia del comienzo del valle inicial
+local LAUNCH_S = 250 -- el despegue de los veteranos está a esta distancia del comienzo del valle inicial
+local START_LENGTH = 450 -- valle inicial (StartIsland): ahí desemboca Flight School y despegan los veteranos
 local VALLEY = { length = 600, width = 700, floorDepth = 320, wallTop = 420 } -- pausas entre corredores
 -- Ritmo: dentro de un capítulo el valle es corto (~6 s: pantalla de checkpoint y respiro); al cambiar de capítulo,
 -- largo (10 s: respiro grande y bioma nuevo).
@@ -291,7 +292,10 @@ local function buildTube(parent: Instance, frames, opts)
 			local dir = pb - pa
 			local mid = (pa + pb) / 2
 			local length = dir.Magnitude + (width / 2 + WALL_T) * turn + 2
-			newPart(shell, name, kind, Vector3.new(width + 2 * WALL_T, SLAB_T, length), CFrame.lookAt(mid, mid + dir))
+			local part = newPart(shell, name, kind, Vector3.new(width + 2 * WALL_T, SLAB_T, length), CFrame.lookAt(mid, mid + dir))
+			if opts.ceiling then
+				part:SetAttribute("Clearance", math.min(a.height, b.height)) -- alto libre del tramo (vestido)
+			end
 		end
 		slab("Floor", "Ground", opts.floor(a) - SLAB_T / 2, opts.floor(b) - SLAB_T / 2)
 		if opts.ceiling then
@@ -2146,11 +2150,12 @@ end
 
 -- ── Tutorial: FLIGHT SCHOOL (nivel 0, ~40 s) ─────────────────────────────
 -- Un solo corredor continuo, sin valles: bajar → subir → izquierda → cambio a la derecha → combo sin ayudas.
--- Cada concepto tiene su situación justo después de presentarlo. Lo vuela el dúo (si alguno es nuevo) antes del
--- nivel 1, o un jugador solo con el Coach (TutorialBot). Va en Map.Tutorial, lejos del recorrido.
+-- Cada concepto tiene su situación justo después de presentarlo. Es el principio del recorrido: desemboca en el
+-- valle de la StartIsland, justo antes del nivel 1. Los dúos con alguien nuevo despegan aquí; los veteranos, en la
+-- StartIsland. Va en Map.Tutorial (su propio recorrido para los checkpoints: la "meta" es la línea de relevo en
+-- el despegue de los veteranos, y al cruzarla empieza el recorrido de verdad sin cortes).
 -- coach = indicaciones por tramo, en fracciones de la Route: { from, to, texto, acción } (acción 1 = marcas
--- fantasma en la barra del HUD: dónde ponerse cada uno · 3 = el Coach resbala). Texto: una o dos palabras.
-local TUTORIAL_START = Vector3.new(0, CRUISE, 4000)
+-- fantasma en la barra del HUD: dónde ponerse cada uno). Texto: una o dos palabras.
 local TUTORIAL_LAUNCH_S = 420 -- despegue a 180 studs de la boca: la primera acción llega enseguida
 local TUTORIAL_LEVELS = {
 	{
@@ -2186,7 +2191,6 @@ local TUTORIAL_LEVELS = {
 			{ 0.43, 0.52, "LEFT!", 1 },
 			{ 0.52, 0.62, "SWAP RIGHT!", 1 },
 			{ 0.62, 0.7, "Your turn!", 0 },
-			{ 0.7, 0.78, "", 3 },
 		},
 	},
 }
@@ -2222,11 +2226,16 @@ local function buildCourse(root: Instance, levels, startPos: Vector3, options): 
 	local summary = {}
 
 	-- Valle inicial: acantilado cerrado detrás, StartIsland y despegue en su borde.
-	local startFrames = tracePath(startPos, 0, VALLEY.width, 0, { { kind = "straight", length = VALLEY.length } })
+	local startLength = options.startLength or VALLEY.length
+	local startFrames = tracePath(startPos, 0, VALLEY.width, 0, { { kind = "straight", length = startLength } })
 	local start = buildValley(root, "StartIsland", startFrames)
-	cliffFace(start, "BackWall", startFrames[1], nil, VALLEY_EXTENTS)
+	if not options.noBackWall then
+		cliffFace(start, "BackWall", startFrames[1], nil, VALLEY_EXTENTS) -- (sin ella: por detrás llega Flight School)
+	end
 	local launch = frameAt(startFrames, options.launchS or LAUNCH_S)
-	island(start, launch.pos - Vector3.new(0, 14, 0) - forwardOf(0) * 115, 0, 230, 280, BEACON_COLORS[1], startPos.Y)
+	-- En el recorrido principal, los dúos que vienen de Flight School pasan por encima de esta isla: algo más baja.
+	local islandDrop = if options.noBackWall then 24 else 14
+	island(start, launch.pos - Vector3.new(0, islandDrop, 0) - forwardOf(0) * 115, 0, 230, 280, BEACON_COLORS[1], startPos.Y)
 	marker(start, "LaunchPoint", frameCFrame(launch))
 	marker(devSpawns, "Start", frameCFrame(launch))
 	if options.moveTemplate then
@@ -2239,7 +2248,7 @@ local function buildCourse(root: Instance, levels, startPos: Vector3, options): 
 	dressModel(start, 0, 1)
 
 	local cursor = startFrames[#startFrames]
-	local total = VALLEY.length
+	local total = startLength
 	for index, spec in levels do
 		local levelName = string.format("Level%02d", index)
 		-- Corredores más ajustados donde toca (options.scaleFor): ancho y alto de la sección, también en las
@@ -2265,7 +2274,7 @@ local function buildCourse(root: Instance, levels, startPos: Vector3, options): 
 		level:SetAttribute("Width", spec.width * scale)
 		level:SetAttribute("Height", spec.height * scale)
 		if spec.coach then
-			-- Indicaciones del tutorial para TutorialBot: "desde|hasta|lado|texto;…" (fracciones de la Route).
+			-- Indicaciones de Flight School (FlightSchool.cuesOf): "desde|hasta|lado|texto;…" (fracciones de la Route).
 			local cues = {}
 			for _, cue in spec.coach do
 				table.insert(cues, string.format("%g|%g|%d|%s", cue[1], cue[2], cue[4] or 0, cue[3]))
@@ -2311,6 +2320,13 @@ local function buildCourse(root: Instance, levels, startPos: Vector3, options): 
 			dressModel(rest, index, index + 1)
 			cursor = valleyFrames[#valleyFrames]
 			total += valleyLength
+		elseif options.handoff then
+			-- Relevo (Flight School): la "meta" es una línea en el despegue de los veteranos, dentro del valle de la
+			-- StartIsland del recorrido principal. Sin geometría propia: se sigue volando hacia el nivel 1.
+			local finish = newModel(root, "FinishIsland")
+			marker(finish, "CheckpointZone", options.handoff, Vector3.new(VALLEY.width - 60, 400, 40))
+			marker(finish, "FinishLine", options.handoff, Vector3.new(VALLEY.width - 60, 400, 4))
+			marker(devSpawns, "Finish", options.handoff * CFrame.new(0, 0, 150))
 		else
 			local finishFrames = tracePath(last.pos, last.heading, VALLEY.width, 0, { { kind = "straight", length = 900 } })
 			local finish = buildValley(root, "FinishIsland", finishFrames)
@@ -2404,6 +2420,8 @@ function buildMap(options): string
 		seedBase = 20260922,
 		moveTemplate = true,
 		chapters = true,
+		startLength = START_LENGTH,
+		noBackWall = true,
 		scaleFor = function(index)
 			return if index >= 11 and index <= 25 then CORRIDOR_SCALE else 1 -- capítulos 3-5 (1-10 ya van ajustados)
 		end,
@@ -2412,7 +2430,14 @@ function buildMap(options): string
 	local tutorial = Instance.new("Folder")
 	tutorial.Name = "Tutorial"
 	tutorial.Parent = map
-	local tutorialSummary, tutorialTotal = buildCourse(tutorial, TUTORIAL_LEVELS, TUTORIAL_START, { dress = dress, dressUpTo = math.huge, seedBase = 7310, moveTemplate = false, launchS = TUTORIAL_LAUNCH_S })
+	-- Flight School va justo detrás del valle inicial: su salida coincide con el comienzo de la StartIsland.
+	local school = TUTORIAL_LEVELS[1]
+	local schoolFrames = tracePath(Vector3.zero, 0, school.width, school.height, school.path)
+	local schoolExit = schoolFrames[#schoolFrames]
+	assert(math.abs(schoolExit.heading) < 1e-6, "Flight School tiene que acabar con el mismo rumbo con el que empieza")
+	local tutorialStart = START - Vector3.new(VALLEY.length, 0, 0) - schoolExit.pos
+	local handoff = CFrame.lookAt(START + Vector3.new(LAUNCH_S, 0, 0), START + Vector3.new(LAUNCH_S + 1, 0, 0))
+	local tutorialSummary, tutorialTotal = buildCourse(tutorial, TUTORIAL_LEVELS, tutorialStart, { dress = dress, dressUpTo = math.huge, seedBase = 7310, moveTemplate = false, launchS = TUTORIAL_LAUNCH_S, handoff = handoff })
 
 	local parts = 0
 	for _, d in map:GetDescendants() do

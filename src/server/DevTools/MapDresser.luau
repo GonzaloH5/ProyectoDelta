@@ -242,12 +242,17 @@ local function patch(ctx, parent, base: CFrame, minSize: number, maxSize: number
 end
 
 -- Suelo del corredor (mortal): rocas y arbustos bajos SOLO junto a las paredes + manchas visuales.
+-- Tramos bajos (túneles): sin rocas, arbustos ni nubes colgando; ahí cualquier cosa tapa el paso.
+local LOW_CLEARANCE = 100
+
 local function corridorFloor(ctx, parent, part: BasePart)
 	local cf, size, rng = part.CFrame, part.Size, ctx.rng
 	local top = size.Y / 2
 	local inner = size.X / 2 - ctx.wallT
 	local half = size.Z / 2 - 8
-	local z = -half + rng:NextNumber(0, 30)
+	local clearance = part:GetAttribute("Clearance")
+	local low = type(clearance) == "number" and clearance < LOW_CLEARANCE
+	local z = if low then math.huge else -half + rng:NextNumber(0, 30)
 	while z < half do
 		for _, side in { -1, 1 } do
 			if rng:NextNumber() < 0.8 then
@@ -321,6 +326,10 @@ local function ceiling(ctx, parent, part: BasePart)
 	local bottom = -size.Y / 2
 	local halfX = size.X / 2 - ctx.wallT
 	local length = size.Z
+	local clearance = part:GetAttribute("Clearance")
+	if type(clearance) == "number" and clearance < LOW_CLEARANCE then
+		return -- túnel: solo el velo luminoso, sin nubes colgando
+	end
 	local t = ctx.cloudGap or rng:NextNumber(20, 80) -- distancia dentro de esta losa hasta la siguiente nube
 	while t < length do
 		ctx.cloudSide = -(ctx.cloudSide or 1)

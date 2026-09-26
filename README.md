@@ -167,8 +167,8 @@ require(game.ServerScriptService.Glider.DevTools.MapDresser:Clone()).audit(works
 | Carpeta | En Studio | Contenido |
 |---|---|---|
 | `src/shared` | `ReplicatedStorage.Glider` | `GliderConfig` (todos los parámetros), `GliderPhysics` (ecuaciones de vuelo, contactos y corazones: servidor, FlightTester y sim), `GliderMath`, `SoundConfig` (huecos de sonido), `GliderRemote` |
-| `src/server` | `ServerScriptService.Glider` | `GliderController` (sesiones, lobby, checkpoints), `GliderSession` (un ala + su dúo + vuelo + reaparición), `Checkpoints` (islas de descanso y meta), `Lobby` (plataformas), `RiderRig` (colgar jugadores + IK), `CollisionGroups`, `PlayerStats` (récords, medallas y ajustes guardados), `DuoLeaderboard` (clasificación de dúos y tablón), `TutorialBot` (bot compañero del tutorial), `LevelStreaming`, `Analytics` (eventos del Creator Dashboard), `DevTools` (MapBuilder, MapDresser, Biomes, LobbyBuilder, LowPoly, FlightTester: solo edición) |
-| `src/client` | `StarterPlayerScripts.GliderClient` | `InputAxis` (teclado/mando/táctil), `FlightHud`, `GliderCamera`, `ResetButton` (Respawn), `LobbyButton`, `CheckpointBanner`, `ResultsScreen`, `Callouts` (avisos al compañero), `FlightAudio`, `FlightEffects`, `BiomeLighting`, `Backdrop`, `Ambient`, `ScreenFade`, `Settings` + `SettingsPanel`, `TutorialHints` (oferta, indicaciones y SKIP del tutorial), `UiScale`, `OtherDuos` |
+| `src/server` | `ServerScriptService.Glider` | `GliderController` (sesiones, lobby, checkpoints), `GliderSession` (un ala + su dúo + vuelo + reaparición), `Checkpoints` (islas de descanso y meta), `Lobby` (plataformas), `RiderRig` (colgar jugadores + IK), `CollisionGroups`, `PlayerStats` (récords, medallas y ajustes guardados), `DuoLeaderboard` (clasificación de dúos y tablón), `FlightSchool` (indicaciones y marcas fantasma de Flight School), `LevelStreaming`, `Analytics` (eventos del Creator Dashboard), `DevTools` (MapBuilder, MapDresser, Biomes, LobbyBuilder, LowPoly, FlightTester: solo edición) |
+| `src/client` | `StarterPlayerScripts.GliderClient` | `InputAxis` (teclado/mando/táctil), `FlightHud`, `GliderCamera`, `ResetButton` (Respawn), `LobbyButton`, `CheckpointBanner`, `ResultsScreen`, `Callouts` (avisos al compañero), `FlightAudio`, `FlightEffects`, `BiomeLighting`, `Backdrop`, `Ambient`, `ScreenFade`, `Settings` + `SettingsPanel`, `TutorialHints` (indicaciones, BONK/NICE y SKIP de Flight School), `UiScale`, `OtherDuos` |
 | `tools/sim` | — (no se sincroniza) | Imitación de Roblox para probar el mapa y el FlightTester sin Studio (ver abajo) |
 
 ## Rendimiento: carga del mapa (streaming)
@@ -207,21 +207,19 @@ siempre en la salida.
 
 ## Flight School (tutorial, ~40 s)
 
-- Es el **nivel 0**. Si alguno de los dos del dúo no tiene `TutorialDone`, el dúo despega en `Map.Tutorial`.
-  Al salir, fundido y el ala aparece en la salida del recorrido con una cuenta atrás de 3 s: **nivel 1 sin volver
-  al lobby**. El cronómetro, las medallas y la clasificación empiezan en el nivel 1. `TutorialDone` se guarda
-  para los dos.
+- Es el **principio del recorrido**: `Map.Tutorial` va justo detrás del valle de la StartIsland y desemboca en él.
+  **Si alguno del dúo no tiene `TutorialDone`**, el dúo despega al principio de Flight School; **si los dos ya lo
+  hicieron**, despegan en la StartIsland, más adelante.
+- Al cruzar la **línea de relevo** (en el despegue de los veteranos) empieza el recorrido de verdad **sin cortar el
+  vuelo**: cronómetro, medallas, estadísticas y clasificación cuentan desde ahí, igual para todos
+  (`GliderSession.startCourse`). `TutorialDone` se guarda para los dos. Flight School no cuenta para nada.
 - **Un solo corredor**: bajar (puente) → subir (muro) → izquierda → cambio a la derecha → combo sin ayudas.
 - **Indicaciones**: una palabra por tramo ("DIVE!", "CLIMB!"…) y **marcas fantasma** en la barra del HUD, que
-  indican dónde ponerse cada uno (`GhostLeft` / `GhostRight`, calculadas con `TutorialBot.ghosts`).
+  indican dónde ponerse cada uno (`GhostLeft` / `GhostRight`, calculadas con `FlightSchool.ghosts`).
 - **Modo práctica** (`session.practice`): los golpes no quitan corazones, son un "BONK!" (atributo `Bonks`). Si el
   ala se queda casi parada más de 2 s (`PracticeStuckTime`), ayuda el viento a favor. Nadie se queda atascado.
-- **SKIP** en dúo: hace falta que lo pulsen los dos (`SkipVotes`), y se salta al nivel 1.
-- **Solo con el Coach**: la primera vez que alguien entra, mientras busca pareja, se le ofrece "Practice with the
-  Coach". Es el mismo nivel: el Coach (`TutorialBot`) hace su mitad y resbala una vez en el combo. Al terminar,
-  aterriza y vuelve al lobby.
+- **SKIP**: hace falta que lo pulsen los dos (`SkipVotes`). El ala aparece en el despegue con una cuenta atrás.
 - Las indicaciones (`coach` en `TUTORIAL_LEVELS` de `MapBuilder`) se guardan en el atributo `Coach` del nivel.
-- No cuenta para estadísticas ni clasificación.
 
 ## Clasificación de dúos (tablón del lobby)
 
@@ -348,7 +346,7 @@ python3 tools/sim/run.py drivers/audit.luau              # regla de oro (MapDres
 python3 tools/sim/run.py drivers/layout.luau             # trazado: extensión, separación entre filas y SVG
 python3 tools/sim/run.py drivers/leaderboard.luau        # DuoLeaderboard y PlayerStats (medallas, ajustes) con DataStores falsos
 python3 tools/sim/run.py drivers/tutorial.luau           # Map.Tutorial y el bot (indicaciones, rumbo, colocación)
-python3 tools/sim/run.py drivers/tutorialflight.luau     # vuela Flight School con el Coach (player=full|lift|idle) o duo=true
+python3 tools/sim/run.py drivers/tutorialflight.luau     # vuela Flight School en dúo y sigue hasta el nivel 1 (player=full|lift|idle)
 python3 tools/sim/run.py drivers/pacing.luau             # ritmo de cada nivel y cronología de los primeros 5 minutos
 python3 tools/sim/run.py drivers/selftest.luau           # pruebas de la propia imitación
 ```

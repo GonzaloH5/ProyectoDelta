@@ -1,7 +1,5 @@
 --!strict
--- Flight School (tutorial) en el cliente:
---   · offer(): la primera vez que entras, mientras buscas pareja: "¿practicar con el Coach?" (PRACTICE / NO
---     THANKS → "TutorialAnswer"). Con un compañero de verdad, Flight School empieza sola al despegar.
+-- Flight School (el principio del recorrido para los dúos con alguien nuevo) en el cliente:
 --   · update(glider): mientras vas en un ala de Flight School (atributo Tutorial), indicación grande (una o dos
 --     palabras, atributo TutorialHint), "BONK!" al chocar (modo práctica: no quita corazones), "NICE!" al pasar al
 --     tramo siguiente y botón SKIP (en dúo hace falta que lo pulsen los dos: atributo SkipVotes).
@@ -15,8 +13,6 @@ local UiScale = require(script.Parent:WaitForChild("UiScale"))
 
 local TutorialHints = {}
 
-local PANEL = Color3.fromRGB(18, 22, 30)
-local GREEN = Color3.fromRGB(80, 200, 110)
 local GREY = Color3.fromRGB(90, 98, 115)
 
 local function corner(parent: Instance, radius: number)
@@ -128,10 +124,9 @@ function TutorialHints.update(glider: Model?)
 		lastBonks = 0
 		return
 	end
-	local duo = glider:GetAttribute("TutorialDuo") == true
-	caption.Text = if duo then "FLIGHT SCHOOL · learn it together" else "PRACTICE · your partner is the Coach"
+	caption.Text = "FLIGHT SCHOOL · learn it together"
 	local votes = glider:GetAttribute("SkipVotes")
-	skip.Text = if duo and type(votes) == "number" and votes > 0 then string.format("SKIP (%d/2)", votes) else "SKIP TUTORIAL"
+	skip.Text = if type(votes) == "number" and votes > 0 then string.format("SKIP (%d/2)", votes) else "SKIP TUTORIAL"
 	-- Golpes en modo práctica: no cuestan nada, solo se ríe uno.
 	local bonks = glider:GetAttribute("Bonks")
 	if type(bonks) == "number" and bonks > lastBonks then
@@ -152,68 +147,6 @@ function TutorialHints.update(glider: Model?)
 		hintScale.Scale = 1.25
 		TweenService:Create(hintScale, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
 	end
-end
-
--- ── Oferta (solo la primera vez) ──────────────────────────────────────
-
-function TutorialHints.offer()
-	local offer = Instance.new("ScreenGui")
-	offer.Name = "GliderTutorialOffer"
-	offer.ResetOnSpawn = false
-	offer.IgnoreGuiInset = true
-	offer.DisplayOrder = 100
-	UiScale.attach(offer)
-
-	local backdrop = Instance.new("Frame")
-	backdrop.Size = UDim2.fromScale(1, 1)
-	backdrop.BackgroundColor3 = Color3.new(0, 0, 0)
-	backdrop.BackgroundTransparency = 0.5
-	backdrop.Active = true
-	backdrop.Parent = offer
-
-	local panel = Instance.new("Frame")
-	panel.AnchorPoint = Vector2.new(0.5, 0.5)
-	panel.Position = UDim2.fromScale(0.5, 0.5)
-	panel.Size = UDim2.fromOffset(520, 270)
-	panel.BackgroundColor3 = PANEL
-	panel.Parent = backdrop
-	corner(panel, 14)
-
-	local title = text(panel, Enum.Font.GothamBlack, 34)
-	title.Position = UDim2.fromOffset(20, 22)
-	title.Size = UDim2.new(1, -40, 0, 44)
-	title.Text = "Waiting for a wingmate?"
-	local body = text(panel, Enum.Font.GothamMedium, 19)
-	body.Position = UDim2.fromOffset(30, 76)
-	body.Size = UDim2.new(1, -60, 0, 80)
-	body.TextColor3 = Color3.fromRGB(215, 222, 235)
-	body.Text = "Practice in Flight School (40 s) with the Coach.\nWith a real partner, Flight School starts by itself."
-
-	local play = button(panel, "PRACTICE", GREEN)
-	play.AnchorPoint = Vector2.new(1, 1)
-	play.Position = UDim2.new(0.5, -8, 1, -24)
-	play.Size = UDim2.fromOffset(210, 54)
-	local decline = button(panel, "NO THANKS", GREY)
-	decline.AnchorPoint = Vector2.new(0, 1)
-	decline.Position = UDim2.new(0.5, 8, 1, -24)
-	decline.Size = UDim2.fromOffset(210, 54)
-
-	local answered = false
-	local function answer(accept: boolean)
-		if answered then
-			return
-		end
-		answered = true
-		remote:FireServer("TutorialAnswer", accept)
-		offer:Destroy()
-	end
-	play.Activated:Connect(function()
-		answer(true)
-	end)
-	decline.Activated:Connect(function()
-		answer(false)
-	end)
-	offer.Parent = playerGui
 end
 
 return TutorialHints

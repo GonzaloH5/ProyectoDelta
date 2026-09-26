@@ -200,9 +200,11 @@ local function timeline(label: string, withTutorial: boolean)
 				add("valle", valley)
 			end
 		end
-		add("paso al recorrido (cuenta atrás)", Config.CountdownTime + 1)
+		-- Recorrido continuo: de la salida de Flight School, por el valle de la StartIsland, al nivel 1.
+		add("StartIsland (relevo) → nivel 1", glide(tutorial.Level01.Exit, map.Level01.Entry))
+	else
+		add("despegue → nivel 1", glide(map.StartIsland:FindFirstChild("LaunchPoint"), map.Level01.Entry))
 	end
-	add("despegue → nivel 1", glide(map.StartIsland:FindFirstChild("LaunchPoint"), map.Level01.Entry))
 	for index = from, to do
 		local m = mainRows[index]
 		if not m or t >= limit then

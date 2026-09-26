@@ -89,7 +89,9 @@ Cada nivel tiene en `LEVELS`:
 
 ## 6. Flight School (tutorial, ~40 s)
 
-Es el "nivel 0". Lo juega el dúo si alguno de los dos es nuevo; al terminar pasa directo al nivel 1, sin lobby.
+Es el principio del recorrido: desemboca en el valle de la StartIsland, justo antes del nivel 1. Si alguno del dúo
+es nuevo, despegan al principio de Flight School; si no, en la StartIsland. Al cruzar la línea de relevo (el
+despegue de los veteranos) empieza el recorrido de verdad sin cortar el vuelo.
 
 | Tramo | Situación | Señal |
 |---|---|---|
@@ -99,10 +101,10 @@ Es el "nivel 0". Lo juega el dúo si alguno de los dos es nuevo; al terminar pas
 | CAMBIO | curva a la derecha seguida | "SWAP RIGHT!" + fantasmas |
 | COMBO | viga → muro → S | sin ayudas |
 
-- **Modo práctica**: los golpes son "BONK!", sin corazones. Si os atascáis más de 2 s, ayuda el viento a favor.
-  Nadie se queda bloqueado.
-- **SKIP en dúo**: hace falta que lo pulsen los dos.
-- **Con el Coach**: práctica en solitario mientras se busca pareja.
+- **Modo práctica**: los golpes son "BONK!", sin corazones. Si el ala se queda casi parada más de 2 s, ayuda el
+  viento a favor. Nadie se queda bloqueado.
+- **SKIP**: hace falta que lo pulsen los dos.
+- No cuenta para tiempos ni estadísticas.
 
 ## 7. Fichas de los niveles 1-10
 

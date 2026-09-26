@@ -23,7 +23,6 @@ local LEFT, RIGHT = -1, 1
 
 type Slot = {
 	player: Player?,
-	bot: Model?, -- compañero bot del tutorial (TutorialBot mueve su `axis`)
 	rig: RiderRig.Rig?,
 	axis: number, -- -1 A, 0 nada, 1 D (visual, desde la cámara trasera)
 	position: number, -- studs desde el centro de la barra (-izquierda, +derecha), toda la barra
@@ -99,7 +98,6 @@ end
 local function newSlot(side: number): Slot
 	return {
 		player = nil,
-		bot = nil,
 		rig = nil,
 		axis = 0,
 		position = lateralFor(side, Config.StartOutward),
@@ -382,7 +380,7 @@ end
 -- LeftUserId / RightUserId: UserId de quien va en cada hueco, 0 = vacío, -1 = bot del tutorial.
 function GliderSession._publishSlots(self: Session)
 	local function id(slot: Slot): number
-		return if slot.player then slot.player.UserId elseif slot.bot then -1 else 0
+		return if slot.player then slot.player.UserId else 0
 	end
 	self.glider:SetAttribute("LeftUserId", id(self.slots[LEFT]))
 	self.glider:SetAttribute("RightUserId", id(self.slots[RIGHT]))
@@ -404,22 +402,6 @@ function GliderSession._board(self: Session, player: Player, side: number)
 	slot.diedConnection = rig.humanoid.Died:Once(function()
 		self:removePlayer(player)
 	end)
-end
-
--- Cuelga un personaje bot (TutorialBot) en el hueco `side`. Va dentro del modelo del ala: los clientes lo ven
--- como parte de su ala (OtherDuos) y se destruye con ella al terminar.
-function GliderSession.addBot(self: Session, character: Model, side: number)
-	local slot = self.slots[side]
-	character.Parent = self.glider
-	slot.position = lateralFor(side, Config.StartOutward)
-	local rig = RiderRig.attach(character, self.root, side, slot.position)
-	if not rig then
-		character:Destroy()
-		return
-	end
-	slot.bot = character
-	slot.rig = rig
-	self:_publishSlots()
 end
 
 function GliderSession.slotOf(self: Session, player: Player): number?
@@ -609,34 +591,48 @@ function GliderSession.respawn(self: Session, lostWing: boolean?)
 	self:_setState("Countdown")
 end
 
--- Cambio de recorrido sin volver al lobby (Flight School → nivel 1): el ala aparece en `spawn` con una cuenta
--- atrás de `countdown` s y todo vuelve a empezar (cronómetro, checkpoints, contadores; sin modo práctica).
-function GliderSession.relocate(self: Session, spawn: CFrame, countdown: number)
+-- Empieza el recorrido de verdad sin volver al lobby (Flight School → nivel 1). `spawn` = nueva salida (despegue de
+-- los veteranos). Todo vuelve a empezar: cronómetro, checkpoints, contadores y corazones; sin modo práctica.
+-- Sin mover el ala: se usa en vuelo, al cruzar la línea de relevo.
+function GliderSession.startCourse(self: Session, spawn: CFrame)
 	self.respawnCFrame = spawn
 	self.safeCFrame = spawn
+	self.sinceSafePoint = 0
 	local forward = spawn.LookVector * Vector3.new(1, 0, 1)
 	self.respawnForward = if forward.Magnitude > 1e-3 then forward.Unit else self.respawnForward
 	self.checkpoint = 0
 	self.completed = false
 	self.afterFinish = 0
 	self.runTime = 0
-	self.timing = false
 	self.levelHits = 0
 	self.levelLosses = 0
 	self.practice = false
 	self.stuckTime = 0
 	self:_setWindAssist(false)
-	self:respawn(false)
-	self.flight.countdown = countdown
+	self.health = GliderPhysics.newHealth()
 	self.respawns = 0
 	self.impacts = 0
 	self.energy = 1
 	local glider = self.glider
+	glider:SetAttribute("Hearts", self.health.hearts)
 	glider:SetAttribute("Respawns", 0)
 	glider:SetAttribute("Impacts", 0)
 	glider:SetAttribute("Checkpoint", 0)
 	glider:SetAttribute("Completed", false)
 	glider:SetAttribute("RunTime", 0)
+end
+
+-- Como startCourse, pero llevando el ala a `spawn` con una cuenta atrás (SKIP de Flight School).
+function GliderSession.relocate(self: Session, spawn: CFrame, countdown: number)
+	self:startCourse(spawn)
+	self.timing = false -- el cronómetro arranca con el despegue
+	self:respawn(false)
+	self.flight.countdown = countdown
+	self.respawns = 0
+	local glider = self.glider
+	glider:SetAttribute("Respawns", 0)
+	local relocations = glider:GetAttribute("Relocations")
+	glider:SetAttribute("Relocations", (if type(relocations) == "number" then relocations else 0) + 1) -- fundido en el cliente
 end
 
 -- Impulso disponible o no (el controlador lo decide por nivel). Sin impulso nadie se balancea.

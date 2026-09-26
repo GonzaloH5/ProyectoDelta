@@ -1,11 +1,11 @@
 -- Vuela Flight School como en el juego: modo práctica (tocar no quita corazones; golpe fuerte = "bonk"), viento a
--- favor si se atascan contra algo más de Config.PracticeStuckTime, indicaciones y marcas fantasma reales.
---   duo=true: los dos jugadores siguen su marca fantasma (con reacción); al cruzar la salida pasarían al nivel 1.
---   por defecto: un jugador con el Coach (TutorialBot hace su mitad) y ARGS.player:
---     "full" (sigue su fantasma y compensa el resbalón del Coach) · "lift" (solo sube y baja: gira a medias) ·
---     "idle" (no se mueve nunca: sin la ayuda del atasco no pasaría ni el primer tramo).
---   Con el Coach, tras la meta se sigue volando hasta aterrizar, chocar o agotar FinishLandTimeout.
--- Informe: tiempo hasta la salida, bonks, veces que ayudó el viento a favor y desvío máximo de la línea ideal.
+-- favor si el ala se queda casi parada más de Config.PracticeStuckTime, indicaciones y marcas fantasma reales.
+-- El jugador derecho sigue siempre su marca fantasma (con reacción); el izquierdo, según ARGS.player:
+--   "full" (por defecto: sigue su fantasma) · "lift" (solo sube y baja: en las curvas gira a medias) ·
+--   "idle" (no se mueve nunca: sin la ayuda del atasco no pasaría del primer tramo).
+-- Al cruzar la línea de relevo (despegue de los veteranos) se sigue volando hasta la entrada del nivel 1: el
+-- recorrido es continuo.
+-- Informe: tiempo hasta el relevo y hasta el nivel 1, bonks, veces que ayudó el viento a favor y desvío máximo.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Config = require(ReplicatedStorage.Glider.GliderConfig)
 local GliderMath = require(ReplicatedStorage.Glider.GliderMath)
@@ -24,16 +24,16 @@ local MapBuilder = require(game.ServerScriptService.Glider.DevTools.MapBuilder:C
 MapBuilder.build({ dress = ARGS.dress == true })
 local tutorial = workspace.Map.Tutorial
 local Checkpoints = require(game.ServerScriptService.Glider.Checkpoints)
-local TutorialBot = require(game.ServerScriptService.Glider.TutorialBot)
+local FlightSchool = require(game.ServerScriptService.Glider.FlightSchool)
 local course = Checkpoints.new(tutorial)
-local cues = TutorialBot.cuesOf(tutorial.Level01)
+local cues = FlightSchool.cuesOf(tutorial.Level01)
+local levelOneEntry = workspace.Map.Level01.Entry
 
 local params = RaycastParams.new()
 params.FilterDescendantsInstances = { template }
 local DT = 1 / 60
 local inner, outer = Config.BarInnerOffset, Config.BarOuterOffset
-local duo = ARGS.duo == true
-local mode = if duo then "duo" else (ARGS.player or "full")
+local mode = ARGS.player or "full"
 local REACTION = 0.45
 
 local launch = tutorial.StartIsland.LaunchPoint.CFrame
@@ -69,31 +69,16 @@ while t < 150 do
 	t += DT
 	local forward = GliderPhysics.forwardOf(state.yaw)
 	local progress = course:progress(1, pos)
-	local goal = course:lookahead(1, pos, TutorialBot.LOOKAHEAD)
-	local balance = TutorialBot.steer(pos, forward, goal)
-	local lift = TutorialBot.liftFor(pos, goal, state.speed)
-	local cue = TutorialBot.activeCue(cues, "Flying", progress)
-	local ghostLeft, ghostRight = TutorialBot.ghosts(lift, balance)
-	if finishedAt then
-		ghostLeft, ghostRight = TutorialBot.ghosts(0.15, 0) -- aterrizar: los dos al centro
-	end
-	-- Jugador izquierdo (el humano).
-	if mode == "full" or mode == "duo" then
-		local target = ghostLeft
-		if cue and cue.drift and not duo then
-			-- Compensar el resbalón del Coach: pone también la mitad de giro que el Coach no pone.
-			target = -(inner + math.clamp(lift + balance, 0, 1) * (outer - inner))
-		end
-		follow(slots[-1], target)
+	local goal = course:lookahead(1, pos, FlightSchool.LOOKAHEAD)
+	local balance = FlightSchool.steer(pos, forward, goal)
+	local lift = FlightSchool.liftFor(pos, goal, state.speed)
+	local ghostLeft, ghostRight = FlightSchool.ghosts(lift, balance)
+	if mode == "full" then
+		follow(slots[-1], ghostLeft)
 	elseif mode == "lift" then
 		follow(slots[-1], -(inner + math.clamp(lift, 0, 1) * (outer - inner)))
 	end
-	-- Jugador derecho: el segundo humano (dúo) o el Coach.
-	if duo then
-		follow(slots[1], ghostRight)
-	else
-		TutorialBot.step(slots, cue, balance, lift, t, finishedAt ~= nil)
-	end
+	follow(slots[1], ghostRight)
 	for _, slot in slots do
 		slot.velocity = GliderMath.approach(slot.velocity, slot.axis * Config.PlayerSlideSpeed, Config.PlayerSlideResponse, DT)
 		slot.position = math.clamp(slot.position + slot.velocity * DT, -outer, outer)
@@ -110,13 +95,8 @@ while t < 150 do
 		now = t,
 		assistTurn = assistTurn,
 		windVertical = windVertical,
-		landing = finishedAt ~= nil,
-		practice = true,
+		practice = finishedAt == nil,
 	})
-	if flown.landed then
-		result = string.format("META en %.1f s · ATERRIZA %.1f s después", finishedAt or 0, t - (finishedAt or t))
-		break
-	end
 	if flown.event == "bonk" then
 		bonks += 1
 	end
@@ -136,15 +116,16 @@ while t < 150 do
 	local crossed = course:crossed(previous, pos, if finishedAt then 1 else 0)
 	if crossed and crossed.final and not finishedAt then
 		finishedAt = t
-		if duo then
-			result = string.format("SALIDA en %.1f s (→ nivel 1)", t)
-			break
-		end
 	end
 	previous = pos
-	if finishedAt and t - finishedAt >= Config.FinishLandTimeout then
-		result = string.format("META en %.1f s · sin aterrizar en %d s (vuelta al lobby por tiempo)", finishedAt, Config.FinishLandTimeout)
-		break
+	if finishedAt then
+		-- Tras el relevo, el recorrido de verdad: seguir recto hasta la boca del nivel 1.
+		local toEntry = levelOneEntry.CFrame:PointToObjectSpace(pos)
+		if toEntry.Z < 0 then
+			local inside = math.abs(toEntry.X) < 100 and math.abs(toEntry.Y) < 85
+			result = string.format("RELEVO en %.1f s · entra al nivel 1 a los %.1f s%s", finishedAt, t, if inside then "" else " (FUERA DE LA BOCA)")
+			break
+		end
 	end
 end
 print(string.format("jugador=%s · %s · bonks %d · viento a favor %d · desvío máx %.0f", mode, result, bonks, assists, maxOff))
